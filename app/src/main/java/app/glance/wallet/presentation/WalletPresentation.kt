@@ -213,7 +213,9 @@ fun chartSampleTimestamps(nowSeconds: Long, range: ChartRange, earliestSeconds: 
         ChartRange.DAY -> Triple(24, Calendar.HOUR_OF_DAY, 1)
         ChartRange.WEEK -> Triple(28, Calendar.HOUR_OF_DAY, 6)
         ChartRange.MONTH -> Triple(30, Calendar.DAY_OF_MONTH, 1)
-        ChartRange.YEAR -> Triple(52, Calendar.WEEK_OF_YEAR, 1)
+        // 53 points create 52 weekly intervals. With the Monday alignment this guarantees that
+        // the left edge reaches at least a full preceding calendar year.
+        ChartRange.YEAR -> Triple(53, Calendar.WEEK_OF_YEAR, 1)
         ChartRange.ALL -> return allChartSampleTimestamps(nowSeconds, earliestSeconds)
             .withLiveChartEndpoint(nowSeconds)
             .takeLast(MAX_ALL_CHART_BUCKETS)
@@ -359,6 +361,13 @@ fun partialChartStart(
         .maxOrNull()
     return maxOf(requestedStartSeconds, firstIncomplete ?: requestedStartSeconds).coerceAtMost(nowSeconds)
 }
+
+/** A still-limiting target stays eligible after each successful bounded history batch. */
+fun chartHistoryLoadKeys(
+    limitingKeyIds: List<String>,
+    routeReady: Boolean,
+    loading: Boolean,
+): List<String> = if (routeReady && !loading) limitingKeyIds else emptyList()
 
 /**
  * Rebuilds an exact recent balance series from today's confirmed balance. Transactions before

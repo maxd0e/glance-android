@@ -66,10 +66,6 @@ class MempoolFiatPriceClient(
                 }.sortedBy { it.first }
                     .lastOrNull { it.first <= fromEpochSeconds }
                     ?.second
-                    ?: prices.mapNotNull { point ->
-                        point.jsonObject[currency.uppercase()]?.jsonPrimitive?.content?.toDoubleOrNull()
-                            ?.takeIf(::isUsablePrice)
-                    }.firstOrNull()
                 else -> null
             }?.takeIf(::isUsablePrice)
                 ?: throw NetworkException("Fiat provider returned an invalid historical price")

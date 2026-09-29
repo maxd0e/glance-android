@@ -149,7 +149,6 @@ internal fun BalanceChart(database: GlanceDatabase, fiatStore: FiatPriceStore, c
     var range by remember { mutableStateOf(ChartRange.DAY) }
     var selectedTimestamp by remember { mutableStateOf<Long?>(null) }
     var historicalStatus by remember { mutableStateOf(HistoricalFiatStatus.Complete) }
-    var automaticAttemptedKeys by remember(range) { mutableStateOf(emptySet<String>()) }
     var loadingMoreHistory by remember(range) { mutableStateOf(false) }
     val events = remember(history) { history.orEmpty().mapNotNull { row -> row.timestamp?.let { ChartPoint(it, row.valueSats) } } }
     val targetCoverage = remember(coverage) { coverage.orEmpty().map { ChartTargetCoverage(it.keyId, it.earliestTimestamp, it.isHistoryComplete, it.hasMissingTimestamp) } }
@@ -200,10 +199,16 @@ internal fun BalanceChart(database: GlanceDatabase, fiatStore: FiatPriceStore, c
             .map(ChartTargetCoverage::keyId)
     }
 
-    LaunchedEffect(range, limitingKeyIds, torEnabled, offlineMode, torState) {
-        val eligible = limitingKeyIds.filterNot(automaticAttemptedKeys::contains)
-        if (eligible.isNotEmpty() && !offlineMode && (!torEnabled || torState is TorState.Ready) && !loadingMoreHistory) {
-            automaticAttemptedKeys += eligible
+    // Every successful batch advances coverage, which changes targetCoverage and schedules the
+    // next bounded batch if the selected range is still incomplete. A failed request leaves
+    // coverage unchanged, so it is retried only after a route/range change or an explicit refresh.
+    LaunchedEffect(range, targetCoverage, requestedStart, torEnabled, offlineMode, torState) {
+        val eligible = chartHistoryLoadKeys(
+            limitingKeyIds = limitingKeyIds,
+            routeReady = !offlineMode && (!torEnabled || torState is TorState.Ready),
+            loading = loadingMoreHistory,
+        )
+        if (eligible.isNotEmpty()) {
             loadingMoreHistory = true
             runCatching { withContext(Dispatchers.IO) { onLoadMoreHistory(eligible) } }
             loadingMoreHistory = false

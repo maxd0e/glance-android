@@ -71,6 +71,19 @@ class FiatPriceClientTest {
     }
 
     @Test
+    fun `mempool rejects an array history response containing only future prices`() {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(MockResponse().setBody("""{"prices":[{"time":101,"USD":123.45}]}"""))
+            val client = MempoolFiatPriceClient(server.url("api/").toString(), DirectNetworkClientFactorySource)
+
+            assertThrows(NetworkException::class.java) {
+                client.historicalPrices("USD", 100L, 100L)
+            }
+        }
+    }
+
+    @Test
     fun `mempool rejects a zero price from the timestamp endpoint`() {
         MockWebServer().use { server ->
             server.start()

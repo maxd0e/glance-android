@@ -46,6 +46,17 @@ class WalletPresentationTest {
         )
     }
 
+    @Test fun `incomplete chart history remains eligible after a preceding batch`() {
+        assertEquals(
+            listOf("fixed"),
+            chartHistoryLoadKeys(listOf("fixed"), routeReady = true, loading = false),
+        )
+        assertEquals(
+            listOf("fixed"),
+            chartHistoryLoadKeys(listOf("fixed"), routeReady = true, loading = false),
+        )
+    }
+
     @Test fun `chart waits for both cached history and its confirmed balance`() {
         val events = listOf(ChartPoint(10L, 50_000L))
         assertFalse(chartDataIsReady(historyLoaded = false, confirmedBalance = 50_000L, confirmedHistoryCount = 1, events = events))
