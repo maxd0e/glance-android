@@ -11,6 +11,41 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WalletPresentationTest {
+    @Test fun `partial chart replays known deltas backwards from the current balance`() {
+        assertEquals(
+            listOf(ChartPoint(100L, 120L), ChartPoint(200L, 150L), ChartPoint(300L, 130L)),
+            partialBalanceSnapshots(
+                events = listOf(ChartPoint(150L, 30L), ChartPoint(250L, -20L)),
+                timestamps = listOf(100L, 200L, 300L),
+                currentBalance = 130L,
+            ),
+        )
+    }
+
+    @Test fun `partial chart begins at the newest incomplete target boundary`() {
+        assertEquals(
+            200L,
+            partialChartStart(
+                nowSeconds = 500L,
+                requestedStartSeconds = 100L,
+                targetCoverage = listOf(
+                    ChartTargetCoverage("complete", earliestTimestamp = 100L, isComplete = true, hasMissingTimestamp = false),
+                    ChartTargetCoverage("fixed", earliestTimestamp = 200L, isComplete = false, hasMissingTimestamp = false),
+                ),
+            ),
+        )
+    }
+
+    @Test fun `partial chart refuses history with an unknown confirmation date`() {
+        assertNull(
+            partialChartStart(
+                nowSeconds = 500L,
+                requestedStartSeconds = 100L,
+                targetCoverage = listOf(ChartTargetCoverage("fixed", earliestTimestamp = 200L, isComplete = false, hasMissingTimestamp = true)),
+            ),
+        )
+    }
+
     @Test fun `chart waits for both cached history and its confirmed balance`() {
         val events = listOf(ChartPoint(10L, 50_000L))
         assertFalse(chartDataIsReady(historyLoaded = false, confirmedBalance = 50_000L, confirmedHistoryCount = 1, events = events))
@@ -312,6 +347,21 @@ class WalletPresentationTest {
             assertEquals("$range must end at the current balance", ChartPoint(now, 50_000L), snapshots.last())
             assertEquals("$range must retain the pre-transaction bucket value", 0L, snapshots[snapshots.lastIndex - 1].value)
         }
+    }
+
+    @Test fun `complete three month wallet history still fills the full one year chart with zeroes`() {
+        val now = 1_727_284_923L
+        val firstTransaction = now - 90L * 86_400L
+        val samples = chartSampleTimestamps(now, ChartRange.YEAR, firstTransaction)
+        val snapshots = balanceSnapshots(
+            events = listOf(ChartPoint(firstTransaction, 50_000L)),
+            timestamps = samples,
+            currentBalance = 50_000L,
+        )
+
+        assertTrue(samples.first() <= now - ChartRange.YEAR.seconds!!)
+        assertTrue(snapshots.filter { it.timestampSeconds < firstTransaction }.all { it.value == 0L })
+        assertEquals(ChartPoint(now, 50_000L), snapshots.last())
     }
 
     @Test fun `cached history starts from zero rather than the confirmed balance`() {

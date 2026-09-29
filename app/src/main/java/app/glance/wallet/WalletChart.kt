@@ -134,39 +134,57 @@ internal fun chartRangeLabelColor(choice: ChartRange, selected: ChartRange) =
     if (choice == selected) GlanceMandarin else GlanceMuted
 
 @Composable
-internal fun BalanceChart(database: GlanceDatabase, fiatStore: FiatPriceStore, currency: String, torEnabled: Boolean, torState: TorState, historicalFiatRefreshRequest: Long, fiat: Boolean, liveEndpointSeconds: Long, liveFiatPrice: Double?, onSelectionChange: (DashboardChartSelection?) -> Unit, offlineMode: Boolean) {
+internal fun BalanceChart(database: GlanceDatabase, fiatStore: FiatPriceStore, currency: String, torEnabled: Boolean, torState: TorState, historicalFiatRefreshRequest: Long, fiat: Boolean, liveEndpointSeconds: Long, liveFiatPrice: Double?, onSelectionChange: (DashboardChartSelection?) -> Unit, offlineMode: Boolean, onLoadMoreHistory: suspend (List<String>) -> Boolean) {
     // DAO methods create cold Flow instances. Keep them stable across a range-change
     // recomposition so collection is not restarted with a fabricated zero balance.
     val historyFlow = remember(database) { database.walletScreenDao().observeChartHistory() }
+    val coverageFlow = remember(database) { database.walletScreenDao().observeChartTargetCoverage() }
     val confirmedBalanceFlow = remember(database) { database.utxoDao().observeChartConfirmedBalance() }
     var history by remember(database) { mutableStateOf<List<ChartHistoryRow>?>(null) }
     var currentBalance by remember(database) { mutableStateOf<Long?>(null) }
+    var coverage by remember(database) { mutableStateOf<List<ChartTargetCoverageRow>?>(null) }
     LaunchedEffect(historyFlow) { historyFlow.collect { history = it } }
+    LaunchedEffect(coverageFlow) { coverageFlow.collect { coverage = it } }
     LaunchedEffect(confirmedBalanceFlow) { confirmedBalanceFlow.collect { currentBalance = it } }
     var range by remember { mutableStateOf(ChartRange.DAY) }
     var selectedTimestamp by remember { mutableStateOf<Long?>(null) }
     var historicalStatus by remember { mutableStateOf(HistoricalFiatStatus.Complete) }
+    var automaticAttemptedKeys by remember(range) { mutableStateOf(emptySet<String>()) }
+    var loadingMoreHistory by remember(range) { mutableStateOf(false) }
     val events = remember(history) { history.orEmpty().mapNotNull { row -> row.timestamp?.let { ChartPoint(it, row.valueSats) } } }
-    val earliest = events.minOfOrNull(ChartPoint::timestampSeconds) ?: liveEndpointSeconds
-    val sampleTimestamps = remember(range, liveEndpointSeconds, earliest) { chartSampleTimestamps(liveEndpointSeconds, range, earliest) }
+    val targetCoverage = remember(coverage) { coverage.orEmpty().map { ChartTargetCoverage(it.keyId, it.earliestTimestamp, it.isHistoryComplete, it.hasMissingTimestamp) } }
+    val requestedStart = remember(range, liveEndpointSeconds, events) {
+        range.seconds?.let { liveEndpointSeconds - it } ?: (events.minOfOrNull(ChartPoint::timestampSeconds) ?: liveEndpointSeconds)
+    }
+    val chartStart = remember(liveEndpointSeconds, requestedStart, targetCoverage) {
+        partialChartStart(liveEndpointSeconds, requestedStart, targetCoverage)
+    }
+    val sampleTimestamps = remember(range, liveEndpointSeconds, chartStart) {
+        chartSampleTimestamps(liveEndpointSeconds, range, chartStart ?: liveEndpointSeconds)
+    }
     val historicalSampleTimestamps = remember(sampleTimestamps) { historicalChartSampleTimestamps(sampleTimestamps) }
     val historicalProvider = remember(currency) {
         historicalProviderFor(currency)
     }
     val quotes by fiatStore.observeHistorical(currency).collectAsState(emptyList())
-    val balancePoints = remember(events, sampleTimestamps, currentBalance) {
-        balanceSnapshots(events, sampleTimestamps, currentBalance)
+    val fullHistoryIsReady = chartDataIsReady(
+        historyLoaded = history != null,
+        confirmedBalance = currentBalance,
+        confirmedHistoryCount = history?.size ?: 0,
+        events = events,
+    )
+    val balancePoints = remember(events, sampleTimestamps, currentBalance, fullHistoryIsReady) {
+        currentBalance?.let { balance ->
+            if (fullHistoryIsReady) balanceSnapshots(events, sampleTimestamps, balance)
+            else partialBalanceSnapshots(events, sampleTimestamps, balance)
+        }.orEmpty()
     }
     val quotesByTimestamp = remember(quotes) { quotes.associate { it.timestamp to it.price } }
     val fiatPoints = fiatChartPoints(balancePoints, quotesByTimestamp, liveEndpointSeconds, liveFiatPrice)
     val partialFiatPoints = availableFiatChartPoints(balancePoints, quotesByTimestamp, liveEndpointSeconds, liveFiatPrice)
     val displayPoints = if (fiat) fiatPoints ?: partialFiatPoints.takeIf { it.isNotEmpty() } else balancePoints
-    val candidateIsReady = chartDataIsReady(
-        historyLoaded = history != null,
-        confirmedBalance = currentBalance,
-        confirmedHistoryCount = history?.size ?: 0,
-        events = events,
-    ) && displayPoints != null
+    val candidateIsReady = history != null && currentBalance != null && chartStart != null && events.isNotEmpty() && displayPoints != null &&
+        (fullHistoryIsReady || coverage != null && chartStart >= requestedStart)
     var lastRenderablePoints by remember(fiat, range, currency) { mutableStateOf<List<ChartPoint>?>(null) }
     SideEffect {
         if (candidateIsReady) lastRenderablePoints = displayPoints
@@ -175,6 +193,22 @@ internal fun BalanceChart(database: GlanceDatabase, fiatStore: FiatPriceStore, c
     val selectedDisplayPoint = selectedTimestamp?.let { timestamp -> renderPoints?.firstOrNull { it.timestampSeconds == timestamp } }
     val dashboardSelection = dashboardChartSelection(selectedTimestamp, balancePoints, partialFiatPoints)
     val requiresHistoricalFiat = fiat || selectedTimestamp != null
+    val coverageIsPartial = chartStart != null && chartStart > requestedStart
+    val limitingKeyIds = remember(targetCoverage, chartStart, requestedStart) {
+        if (!coverageIsPartial) emptyList() else targetCoverage
+            .filter { !it.isComplete && it.earliestTimestamp == chartStart }
+            .map(ChartTargetCoverage::keyId)
+    }
+
+    LaunchedEffect(range, limitingKeyIds, torEnabled, offlineMode, torState) {
+        val eligible = limitingKeyIds.filterNot(automaticAttemptedKeys::contains)
+        if (eligible.isNotEmpty() && !offlineMode && (!torEnabled || torState is TorState.Ready) && !loadingMoreHistory) {
+            automaticAttemptedKeys += eligible
+            loadingMoreHistory = true
+            runCatching { withContext(Dispatchers.IO) { onLoadMoreHistory(eligible) } }
+            loadingMoreHistory = false
+        }
+    }
 
     LaunchedEffect(fiatStore, requiresHistoricalFiat, range, currency, historicalSampleTimestamps, torEnabled, offlineMode, torState, historicalFiatRefreshRequest) {
         if (requiresHistoricalFiat && isHistoricalFiatRouteReady(torEnabled, torState, offlineMode)) {
@@ -204,14 +238,9 @@ internal fun BalanceChart(database: GlanceDatabase, fiatStore: FiatPriceStore, c
                     selectedTimestamp = null
                 },
             )
-            loadedHistory == null || currentBalance == null -> Text("Loading balance chart…", color = GlanceMuted)
+            loadedHistory == null || coverage == null || currentBalance == null -> Text("Loading balance chart…", color = GlanceMuted)
             loadedHistory.isEmpty() -> Text("Balance chart will appear after confirmed history is cached.", color = GlanceMuted)
-            !chartDataIsReady(
-                historyLoaded = true,
-                confirmedBalance = currentBalance,
-                confirmedHistoryCount = loadedHistory.size,
-                events = events,
-            ) -> Text("Balance chart is waiting for complete confirmation history.", color = GlanceMuted)
+            chartStart == null -> Text("Balance chart is waiting for confirmed transaction dates.", color = GlanceMuted)
             displayPoints == null -> historicalFiatRefreshMessage(historicalStatus, torEnabled)?.let { Text(it, color = GlanceMuted) }
         }
         ChartRangeSelector(selected = range, onSelect = { nextRange ->

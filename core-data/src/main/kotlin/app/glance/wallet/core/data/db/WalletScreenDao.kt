@@ -38,7 +38,13 @@ data class UtxoRow(
     val derivationIndex: Int,
     val label: String?,
 )
-data class ChartHistoryRow(val txid: String, val valueSats: Long, val confirmations: Int, val timestamp: Long?)
+data class ChartHistoryRow(val keyId: String, val txid: String, val valueSats: Long, val confirmations: Int, val timestamp: Long?)
+data class ChartTargetCoverageRow(
+    val keyId: String,
+    val isHistoryComplete: Boolean,
+    val earliestTimestamp: Long?,
+    val hasMissingTimestamp: Boolean,
+)
 data class TransactionHistoryPagingRow(
     val remoteCount: Int?,
     val isComplete: Boolean,
@@ -211,13 +217,26 @@ interface WalletScreenDao {
     fun observeGroupUtxos(groupId: String): Flow<List<UtxoRow>>
 
     @Query("""
-        SELECT h.txid, h.valueSats, h.confirmations, b.timestamp
+        SELECT a.keyId, h.txid, h.valueSats, h.confirmations, b.timestamp
         FROM address_history h JOIN derived_addresses a ON a.id = h.addressId
         LEFT JOIN block_timestamp_cache b ON b.blockHeight = h.blockHeight
         WHERE h.confirmations > 0
         ORDER BY b.timestamp, h.id
     """)
     fun observeChartHistory(): Flow<List<ChartHistoryRow>>
+
+    @Query("""
+        SELECT k.id AS keyId,
+          CASE WHEN k.targetType = 'SINGLE_ADDRESS' THEN COALESCE(MAX(a.historyComplete), 0) ELSE 1 END AS isHistoryComplete,
+          MIN(CASE WHEN h.confirmations > 0 THEN b.timestamp END) AS earliestTimestamp,
+          CASE WHEN SUM(CASE WHEN h.confirmations > 0 AND b.timestamp IS NULL THEN 1 ELSE 0 END) > 0 THEN 1 ELSE 0 END AS hasMissingTimestamp
+        FROM watched_keys k
+        LEFT JOIN derived_addresses a ON a.keyId = k.id
+        LEFT JOIN address_history h ON h.addressId = a.id
+        LEFT JOIN block_timestamp_cache b ON b.blockHeight = h.blockHeight
+        GROUP BY k.id
+    """)
+    fun observeChartTargetCoverage(): Flow<List<ChartTargetCoverageRow>>
 
     @Query("""
         SELECT * FROM derived_addresses

@@ -110,25 +110,43 @@ class SyncEngine(
     /** Explicit user action from a fixed-address Transactions tab; never called by background sync. */
     suspend fun loadMoreSingleAddressHistory(keyId: String): Boolean {
         try {
-            var state = store.singleAddressHistoryState(keyId) ?: return false
-            if (state.isComplete) return false
-            val provider = singleAddressHistoryProvider()
-            repeat(SINGLE_ADDRESS_HISTORY_PAGE_BATCH_SIZE) {
-                if (state.isComplete) return@repeat
-                val page = provider.fetchAddressHistoryPage(state.address.address, state.nextCursor)
-                state = store.mergeSingleAddressHistoryPage(state, page)
-                page.transactions.mapNotNull { it.blockHeight }.distinct().forEach { height ->
-                    if (!store.hasTimestamp(height)) {
-                        try { store.saveTimestamp(height, provider.blockTimestamp(height)) }
-                        catch (failure: Exception) { if (failure is CancellationException) throw failure }
-                    }
-                }
-            }
-            enrichMissingTransactionIo(listOf(keyId))
-            return true
+            return loadSingleAddressHistoryBatch(keyId)
         } finally {
             closeProviders()
         }
+    }
+
+    /** One bounded history batch per address, shared by chart-driven and detail-page requests. */
+    suspend fun loadMoreSingleAddressHistories(keyIds: Collection<String>): Boolean {
+        try {
+            var loadedAny = false
+            keyIds.distinct().forEach { keyId ->
+                currentCoroutineContext().ensureActive()
+                loadedAny = loadSingleAddressHistoryBatch(keyId) || loadedAny
+            }
+            return loadedAny
+        } finally {
+            closeProviders()
+        }
+    }
+
+    private suspend fun loadSingleAddressHistoryBatch(keyId: String): Boolean {
+        var state = store.singleAddressHistoryState(keyId) ?: return false
+        if (state.isComplete) return false
+        val provider = singleAddressHistoryProvider()
+        repeat(SINGLE_ADDRESS_HISTORY_PAGE_BATCH_SIZE) {
+            if (state.isComplete) return@repeat
+            val page = provider.fetchAddressHistoryPage(state.address.address, state.nextCursor)
+            state = store.mergeSingleAddressHistoryPage(state, page)
+            page.transactions.mapNotNull { it.blockHeight }.distinct().forEach { height ->
+                if (!store.hasTimestamp(height)) {
+                    try { store.saveTimestamp(height, provider.blockTimestamp(height)) }
+                    catch (failure: Exception) { if (failure is CancellationException) throw failure }
+                }
+            }
+        }
+        enrichMissingTransactionIo(listOf(keyId))
+        return true
     }
 
     suspend fun syncAll(): SyncResult {

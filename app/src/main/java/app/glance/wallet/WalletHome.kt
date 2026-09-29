@@ -131,7 +131,7 @@ import kotlin.math.roundToInt
 
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable internal fun HomeScreen(database: GlanceDatabase, fiatStore: FiatPriceStore, currency: String, torEnabled: Boolean, offlineMode: Boolean, torState: TorState, torReadySinceMillis: Long?, syncState: WalletSyncState, showChart: Boolean, historicalFiatRefreshRequest: Long, onRetrySync: () -> Unit, onAdd: () -> Unit, onSettings: () -> Unit, onSupport: () -> Unit, onKey: (String) -> Unit, onGroup: (String) -> Unit, onTorEnabled: (Boolean) -> Unit, onOfflineMode: (Boolean) -> Unit, onRenewTor: () -> Unit) {
+@Composable internal fun HomeScreen(database: GlanceDatabase, fiatStore: FiatPriceStore, currency: String, torEnabled: Boolean, offlineMode: Boolean, torState: TorState, torReadySinceMillis: Long?, syncState: WalletSyncState, showChart: Boolean, historicalFiatRefreshRequest: Long, onRetrySync: () -> Unit, onAdd: () -> Unit, onSettings: () -> Unit, onSupport: () -> Unit, onKey: (String) -> Unit, onGroup: (String) -> Unit, onTorEnabled: (Boolean) -> Unit, onOfflineMode: (Boolean) -> Unit, onRenewTor: () -> Unit, onLoadMoreHistory: suspend (List<String>) -> Boolean) {
     val rawKeys by database.walletScreenDao().observeKeyBalances().collectAsState(initial = emptyList())
     val groupedKeys by database.walletScreenDao().observeGroupedBalances().collectAsState(initial = emptyList())
     val keys = rawKeys.filter { it.walletGroupId == null } + groupedKeys
@@ -247,6 +247,7 @@ import kotlin.math.roundToInt
                         liveFiatPrice = latestQuote?.price,
                         onSelectionChange = { selectedChartPoint = it },
                         offlineMode = offlineMode,
+                        onLoadMoreHistory = onLoadMoreHistory,
                     )
                 }
                 items(keys, key = { it.id }) { key ->

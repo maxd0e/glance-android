@@ -45,6 +45,8 @@ import app.glance.wallet.core.security.ProfileDatabaseManager
 import app.glance.wallet.core.security.SecurityPreferences
 import app.glance.wallet.core.security.SecurityPreferencesStore
 import app.glance.wallet.core.security.UtxoView
+import app.glance.wallet.core.network.FiatPriceClient
+import app.glance.wallet.core.network.FiatQuote
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -66,6 +68,67 @@ class WalletContentTest {
     fun tearDown() {
         runBlocking { preferences.wipe() }
         profiles.deleteAll()
+    }
+
+    @Test
+    fun partialHomeChartDoesNotOfferHistoryLoadingControls() {
+        val database = Room.inMemoryDatabaseBuilder(context, GlanceDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        runBlocking {
+            database.watchedKeyDao().upsert(
+                WatchedKeyEntity(
+                    id = "single-address",
+                    label = "Single address",
+                    keyMaterial = "redacted",
+                    scriptType = ScriptType.NATIVE_SEGWIT,
+                    dateAdded = 1L,
+                    targetType = WatchTargetType.SINGLE_ADDRESS,
+                ),
+            )
+            val addressId = database.derivedAddressDao().upsert(
+                DerivedAddressEntity(
+                    keyId = "single-address",
+                    chain = AddressChain.EXTERNAL,
+                    derivationIndex = 0,
+                    address = "bc1qpartialchartaddress",
+                    isUsed = true,
+                    isConfirmedUnused = false,
+                    historyComplete = false,
+                ),
+            )
+            database.addressHistoryDao().upsertAll(
+                listOf(AddressHistoryEntity(addressId = addressId, txid = "partial-chart-transaction", confirmations = 1, blockHeight = 1, valueSats = 50_000)),
+            )
+            database.blockTimestampCacheDao().upsert(BlockTimestampCacheEntity(blockHeight = 1, timestamp = 1_000L))
+            database.utxoDao().upsertAll(
+                listOf(UtxoEntity(addressId = addressId, txid = "partial-chart-transaction", vout = 0, valueSats = 50_000, confirmations = 1)),
+            )
+        }
+        val fiatStore = FiatPriceStore(database, UnusedFiatPriceClient, UnusedFiatPriceClient)
+        composeRule.setContent {
+            GlanceTheme {
+                BalanceChart(
+                    database = database,
+                    fiatStore = fiatStore,
+                    currency = "USD",
+                    torEnabled = false,
+                    torState = TorState.Disabled,
+                    historicalFiatRefreshRequest = 0L,
+                    fiat = false,
+                    liveEndpointSeconds = 2_000L,
+                    liveFiatPrice = null,
+                    onSelectionChange = {},
+                    offlineMode = false,
+                    onLoadMoreHistory = { false },
+                )
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithTag("chart_partial_history_notice").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("chart_load_more_history").assertCountEquals(0)
+        database.close()
     }
 
     @Test
@@ -906,6 +969,13 @@ class WalletContentTest {
         database.utxoDao().upsertAll(
             listOf(UtxoEntity(addressId = addressId, txid = "redacted-utxo-transaction", vout = 0, valueSats = 50_000, confirmations = 1)),
         )
+    }
+
+    private object UnusedFiatPriceClient : FiatPriceClient {
+        override val provider = app.glance.wallet.core.network.FiatProvider.MEMPOOL_SPACE
+        override fun currentPrice(currency: String): FiatQuote = error("The sats chart must not request fiat prices")
+        override fun historicalPrices(currency: String, fromEpochSeconds: Long, toEpochSeconds: Long): List<FiatQuote> =
+            error("The sats chart must not request fiat prices")
     }
 
     private fun seedGroupUtxos(database: GlanceDatabase) = runBlocking {

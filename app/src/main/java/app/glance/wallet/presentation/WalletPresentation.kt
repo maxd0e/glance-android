@@ -187,6 +187,14 @@ data class ChartPoint(val timestampSeconds: Long, val value: Long)
 data class PricePoint(val timestampSeconds: Long, val price: Double)
 enum class ChartRange(val seconds: Long?) { DAY(86_400), WEEK(604_800), MONTH(2_592_000), YEAR(31_536_000), ALL(null) }
 
+/** The locally-known lower bound for one watched target's confirmed balance history. */
+data class ChartTargetCoverage(
+    val keyId: String,
+    val earliestTimestamp: Long?,
+    val isComplete: Boolean,
+    val hasMissingTimestamp: Boolean,
+)
+
 /** Fiat values deliberately remain decimal; rounding belongs solely to the display formatter. */
 fun fiatValue(sats: Long, bitcoinPrice: Double): Double = sats.toDouble() / 100_000_000.0 * bitcoinPrice
 
@@ -334,6 +342,38 @@ fun chartPointsForDisplay(
     candidateIsReady: Boolean,
     lastRenderable: List<ChartPoint>?,
 ): List<ChartPoint>? = if (candidateIsReady) candidate else lastRenderable
+
+/**
+ * Returns the first instant where every target has timestamped confirmed history. A missing
+ * timestamp is not safely placeable on a chart, so it deliberately blocks partial rendering.
+ */
+fun partialChartStart(
+    nowSeconds: Long,
+    requestedStartSeconds: Long,
+    targetCoverage: List<ChartTargetCoverage>,
+): Long? {
+    if (targetCoverage.any(ChartTargetCoverage::hasMissingTimestamp)) return null
+    val firstIncomplete = targetCoverage
+        .filterNot(ChartTargetCoverage::isComplete)
+        .mapNotNull(ChartTargetCoverage::earliestTimestamp)
+        .maxOrNull()
+    return maxOf(requestedStartSeconds, firstIncomplete ?: requestedStartSeconds).coerceAtMost(nowSeconds)
+}
+
+/**
+ * Rebuilds an exact recent balance series from today's confirmed balance. Transactions before
+ * [timestamps]' first value are intentionally not needed: reverse replay subtracts only later
+ * signed deltas, which makes this safe for a bounded, partially cached address history.
+ */
+fun partialBalanceSnapshots(
+    events: List<ChartPoint>,
+    timestamps: List<Long>,
+    currentBalance: Long,
+): List<ChartPoint> = timestamps.sorted().map { timestamp ->
+    ChartPoint(timestamp, currentBalance - events.asSequence()
+        .filter { it.timestampSeconds > timestamp }
+        .sumOf(ChartPoint::value))
+}
 
 /**
  * Produces a fixed-density balance history by replaying cached confirmed transaction deltas from
