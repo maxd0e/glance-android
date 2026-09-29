@@ -2,6 +2,19 @@
 
 All notable changes to Glance are documented in this file.
 
+## [0.1.0-beta.13] - 2026-09-30
+
+### Improved
+
+- Made partially cached balance charts render from the safe shared history boundary while preserving correct reverse-replayed balances.
+- Limited each chart range session to one automatic bounded history request per incomplete watch target; additional history remains an explicit action.
+- Completed year-chart weekly coverage and tightened historical fiat-response validation.
+
+### Known limitations
+
+- Stealth/street mode and encrypted backup/import remain planned work.
+- Use only public wallet data and verify balances independently before acting on them.
+
 ## [0.1.0-beta.12] - 2026-09-25
 
 ### Added

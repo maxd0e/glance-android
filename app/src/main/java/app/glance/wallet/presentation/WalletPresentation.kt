@@ -362,12 +362,13 @@ fun partialChartStart(
     return maxOf(requestedStartSeconds, firstIncomplete ?: requestedStartSeconds).coerceAtMost(nowSeconds)
 }
 
-/** A still-limiting target stays eligible after each successful bounded history batch. */
+/** A limiting target is eligible for one automatic bounded batch per chart-range session. */
 fun chartHistoryLoadKeys(
     limitingKeyIds: List<String>,
+    attemptedKeyIds: Set<String>,
     routeReady: Boolean,
     loading: Boolean,
-): List<String> = if (routeReady && !loading) limitingKeyIds else emptyList()
+): List<String> = if (routeReady && !loading) limitingKeyIds.filterNot(attemptedKeyIds::contains) else emptyList()
 
 /**
  * Rebuilds an exact recent balance series from today's confirmed balance. Transactions before

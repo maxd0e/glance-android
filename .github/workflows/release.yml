@@ -3,7 +3,7 @@ name: Release beta
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*-beta.*'
 
 permissions:
   contents: write
@@ -48,7 +48,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" "glance-${GITHUB_REF_NAME}.apk" "glance-${GITHUB_REF_NAME}.apk.sha256" --verify-tag --title "Glance $GITHUB_REF_NAME" --generate-notes
+            gh release create "$GITHUB_REF_NAME" "glance-${GITHUB_REF_NAME}.apk" "glance-${GITHUB_REF_NAME}.apk.sha256" --verify-tag --prerelease --title "Glance $GITHUB_REF_NAME" --generate-notes
           fi
       - name: Install Zapstore publisher
         if: vars.ZAPSTORE_PUBLISH_ENABLED == 'true'

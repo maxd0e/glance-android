@@ -46,14 +46,59 @@ class WalletPresentationTest {
         )
     }
 
-    @Test fun `incomplete chart history remains eligible after a preceding batch`() {
+    @Test fun `chart history target is attempted only once per range session`() {
         assertEquals(
             listOf("fixed"),
-            chartHistoryLoadKeys(listOf("fixed"), routeReady = true, loading = false),
+            chartHistoryLoadKeys(
+                limitingKeyIds = listOf("fixed"),
+                attemptedKeyIds = emptySet(),
+                routeReady = true,
+                loading = false,
+            ),
+        )
+        assertEquals(
+            emptyList<String>(),
+            chartHistoryLoadKeys(
+                limitingKeyIds = listOf("fixed"),
+                attemptedKeyIds = setOf("fixed"),
+                routeReady = true,
+                loading = false,
+            ),
+        )
+    }
+
+    @Test fun `new chart range gives an incomplete target one new automatic attempt`() {
+        val previousRangeAttempts = setOf("fixed")
+
+        assertEquals(
+            emptyList<String>(),
+            chartHistoryLoadKeys(
+                limitingKeyIds = listOf("fixed"),
+                attemptedKeyIds = previousRangeAttempts,
+                routeReady = true,
+                loading = false,
+            ),
         )
         assertEquals(
             listOf("fixed"),
-            chartHistoryLoadKeys(listOf("fixed"), routeReady = true, loading = false),
+            chartHistoryLoadKeys(
+                limitingKeyIds = listOf("fixed"),
+                attemptedKeyIds = emptySet(),
+                routeReady = true,
+                loading = false,
+            ),
+        )
+    }
+
+    @Test fun `unavailable chart route does not consume a history attempt`() {
+        assertEquals(
+            emptyList<String>(),
+            chartHistoryLoadKeys(
+                limitingKeyIds = listOf("fixed"),
+                attemptedKeyIds = emptySet(),
+                routeReady = false,
+                loading = false,
+            ),
         )
     }
 
