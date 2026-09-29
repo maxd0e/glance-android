@@ -179,7 +179,10 @@ class ServerPool(
     fun replaceFromManifest(manifest: ServerManifest) {
         val manifestEndpoints = manifest.endpoints.distinctBy(ServerDefinition::id)
         require(manifestEndpoints.isNotEmpty()) { "Manifest contains no servers" }
-        endpoints.removeAll { !it.isCustom }
+        val manifestRoles = manifestEndpoints.map(ServerDefinition::role).toSet()
+        // Older valid manifests predate the Mempool fiat role. Keep a bundled endpoint for any
+        // role omitted by the manifest, while manifest-provided roles remain authoritative.
+        endpoints.removeAll { !it.isCustom && it.role in manifestRoles }
         endpoints.addAll(manifestEndpoints.filterNot(ServerDefinition::isCustom))
         manifestEndpoints.forEach { health.putIfAbsent(it.id, Health()) }
         persist()

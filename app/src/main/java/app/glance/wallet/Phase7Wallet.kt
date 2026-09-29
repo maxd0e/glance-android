@@ -253,6 +253,12 @@ internal fun transactionPageRangeText(page: Int, totalCount: Int): String {
     return "$start–$end of $totalCount"
 }
 
+internal fun transactionPageRangeText(page: Int, totalCount: Int, displayTotalCount: Int): String {
+    val start = (page * TRANSACTION_PAGE_SIZE) + 1
+    val end = minOf(start + TRANSACTION_PAGE_SIZE - 1, totalCount)
+    return "$start–$end of ${displayTotalCount.coerceAtLeast(totalCount)}"
+}
+
 internal fun utxoConfirmationText(confirmations: Int): String = when (confirmations) {
     0 -> "Pending"
     1 -> "1 confirmation"

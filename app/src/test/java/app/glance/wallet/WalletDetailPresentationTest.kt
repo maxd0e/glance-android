@@ -1,11 +1,35 @@
 package app.glance.wallet
 
 import androidx.compose.ui.graphics.Color
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WalletDetailPresentationTest {
+    @Test
+    fun `load more single address history runs on the supplied io dispatcher`() = runBlocking {
+        val executor = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "history-io") }
+        val dispatcher = executor.asCoroutineDispatcher()
+        try {
+            val callbackThread = AtomicReference<String>()
+
+            val loaded = loadMoreSingleAddressHistoryOn(dispatcher) {
+                callbackThread.set(Thread.currentThread().name)
+                true
+            }
+
+            assertTrue(loaded)
+            assertTrue(callbackThread.get().startsWith("history-io"))
+        } finally {
+            dispatcher.close()
+        }
+    }
+
     @Test
     fun oversizedSingleAddressExplainsThatOnlyItsBalanceAndRecentHistoryAreAvailable() {
         assertEquals(
@@ -39,6 +63,10 @@ class WalletDetailPresentationTest {
         assertEquals(2, transactionPageCount(26))
         assertEquals("1–25 of 26", transactionPageRangeText(page = 0, totalCount = 26))
         assertEquals("26–26 of 26", transactionPageRangeText(page = 1, totalCount = 26))
+        assertEquals(
+            "26–50 of 143",
+            transactionPageRangeText(page = 1, totalCount = 50, displayTotalCount = 143),
+        )
     }
 
     @Test

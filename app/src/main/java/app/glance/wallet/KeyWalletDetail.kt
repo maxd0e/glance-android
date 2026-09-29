@@ -114,6 +114,7 @@ import app.glance.wallet.core.security.*
 import app.glance.wallet.presentation.*
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -129,6 +130,11 @@ import java.util.Date
 import java.text.DateFormat
 import kotlin.math.roundToInt
 
+/** Keeps synchronous Esplora pagination off Compose's main dispatcher. */
+internal suspend fun loadMoreSingleAddressHistoryOn(
+    dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    loadMore: suspend () -> Boolean,
+): Boolean = withContext(dispatcher) { loadMore() }
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable internal fun KeyDetailScreen(database: GlanceDatabase, keyId: String, defaultUtxoView: UtxoView, syncState: WalletSyncState, onRefresh: () -> Unit, onBack: () -> Unit, onTransaction: (String) -> Unit, onReceive: () -> Unit, onWalletSettings: (() -> Unit)? = null, onLoadMoreHistory: suspend () -> Boolean = { false }) {
@@ -152,6 +158,7 @@ import kotlin.math.roundToInt
     val confirmedUtxoCount = utxos.count { it.confirmations > 0 }
     val pendingUtxoCount = utxos.count { it.confirmations == 0 }
     val lastCachedTransactionPage = transactionPageCount(transactionCount) - 1
+    val displayedTransactionCount = historyPaging?.remoteCount?.coerceAtLeast(transactionCount) ?: transactionCount
     val canLoadMoreHistory = singleAddress && transactionCount > 0 && historyPaging?.isComplete != true
     val isLoadMoreHistoryPage = canLoadMoreHistory && transactionPage == lastCachedTransactionPage + 1
     LaunchedEffect(transactionCount, canLoadMoreHistory) {
@@ -190,6 +197,7 @@ import kotlin.math.roundToInt
                     TransactionPaginationControls(
                         page = transactionPage,
                         totalCount = transactionCount,
+                        displayTotalCount = displayedTransactionCount,
                         canAdvanceToLoadMore = canLoadMoreHistory && transactionPage == lastCachedTransactionPage,
                         onPageSelected = { selectedPage ->
                             transactionPage = selectedPage
@@ -202,7 +210,9 @@ import kotlin.math.roundToInt
                                 if (!loadingMoreHistory) scope.launch {
                                     loadingMoreHistory = true
                                     historyLoadFailed = false
-                                    val loaded = runCatching { onLoadMoreHistory() }.getOrDefault(false)
+                                    val loaded = runCatching {
+                                        loadMoreSingleAddressHistoryOn { onLoadMoreHistory() }
+                                    }.getOrDefault(false)
                                     loadingMoreHistory = false
                                     historyLoadFailed = !loaded
                                 }

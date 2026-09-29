@@ -140,7 +140,7 @@ internal fun ScriptType.displayName(): String = when (this) {
 @Composable internal fun WalletDetailTabs(selected: Int, onSelected: (Int) -> Unit) = Surface(color = GlanceSurface, shape = GlanceCardShape, modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 48.dp)) { Row(Modifier.padding(4.dp)) { listOf("Transactions", "UTXOs").forEachIndexed { index, title -> val active = selected == index; Surface(color = if (active) GlanceMandarin else GlanceSurface, shape = walletDetailTabShape, modifier = Modifier.weight(1f).heightIn(min = 40.dp).clickable { onSelected(index) }.semantics { contentDescription = "$title tab, ${if (active) "selected" else "not selected"}" }) { Box(contentAlignment = Alignment.Center) { Text(title, color = if (active) GlanceBackground else GlanceMuted, style = MaterialTheme.typography.labelLarge) } } } } }
 
 @Composable
-internal fun TransactionPaginationControls(page: Int, totalCount: Int, canAdvanceToLoadMore: Boolean = false, onPageSelected: (Int) -> Unit) {
+internal fun TransactionPaginationControls(page: Int, totalCount: Int, displayTotalCount: Int = totalCount, canAdvanceToLoadMore: Boolean = false, onPageSelected: (Int) -> Unit) {
     if (totalCount <= TRANSACTION_PAGE_SIZE && !canAdvanceToLoadMore) return
     val lastPage = transactionPageCount(totalCount) - 1
     Surface(color = GlanceSurface, shape = GlanceCardShape, modifier = Modifier.fillMaxWidth().testTag("transaction_pagination")) {
@@ -154,11 +154,11 @@ internal fun TransactionPaginationControls(page: Int, totalCount: Int, canAdvanc
                 modifier = Modifier.testTag("transaction_pagination_previous"),
             ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous page", tint = GlanceText, modifier = Modifier.size(18.dp)) }
             Text(
-                if (page > lastPage) "Load more transactions" else transactionPageRangeText(page, totalCount),
+                if (page > lastPage) "Load more transactions" else transactionPageRangeText(page, totalCount, displayTotalCount),
                 color = GlanceMuted,
                 style = MaterialTheme.typography.labelSmall,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.weight(1f).semantics { contentDescription = "Transactions ${if (page > lastPage) "load more" else transactionPageRangeText(page, totalCount)}" }.testTag("transaction_pagination_range"),
+                modifier = Modifier.weight(1f).semantics { contentDescription = "Transactions ${if (page > lastPage) "load more" else transactionPageRangeText(page, totalCount, displayTotalCount)}" }.testTag("transaction_pagination_range"),
             )
             IconButton(
                 onClick = { onPageSelected(page + 1) },

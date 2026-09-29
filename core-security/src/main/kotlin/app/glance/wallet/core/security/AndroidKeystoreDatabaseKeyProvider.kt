@@ -24,8 +24,10 @@ class AndroidKeystoreDatabaseKeyProvider(
     }
 
     override fun delete() {
-        wrappedKeyFile.delete()
+        check(!wrappedKeyFile.exists() || wrappedKeyFile.delete()) { "Unable to delete wrapped database key." }
+        check(!wrappedKeyFile.exists()) { "Wrapped database key remains after deletion." }
         keyStore.deleteEntry(keyAlias)
+        check(!keyStore.containsAlias(keyAlias)) { "Database key alias remains after deletion." }
     }
 
     private fun createAndWrap(): ByteArray = ByteArray(DATABASE_KEY_LENGTH).also { key ->

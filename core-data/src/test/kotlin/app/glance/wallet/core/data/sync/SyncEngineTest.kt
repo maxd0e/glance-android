@@ -165,6 +165,45 @@ class SyncEngineTest {
     }
 
     @Test
+    fun `single address persists the Esplora history total when Electrum does not provide one`() = runBlocking {
+        val address = "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu"
+        val store = MemoryStore(listOf(SyncWatchedKey("single", address, null, WatchTargetType.SINGLE_ADDRESS)))
+        store.saveAddress(SyncAddress(keyId = "single", chain = AddressChain.EXTERNAL, index = 0, address = address))
+        val electrum = FakeChain(emptySet(), fixedUsedAddress = address)
+        val esplora = FakeChain(emptySet(), fixedUsedAddress = address, fixedTransactionCount = 143).apply {
+            suppliesAddressSummary = true
+        }
+
+        SyncEngine(store, electrum, historyEnricher = esplora).syncAll()
+
+        assertEquals(143, store.singleState("single")!!.remoteCount)
+    }
+
+    @Test
+    fun `unchanged single address backfills a missing Esplora history total without reloading history`() = runBlocking {
+        val address = "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu"
+        val store = MemoryStore(listOf(SyncWatchedKey("single", address, null, WatchTargetType.SINGLE_ADDRESS)))
+        store.saveAddress(SyncAddress(
+            keyId = "single",
+            chain = AddressChain.EXTERNAL,
+            index = 0,
+            address = address,
+            isUsed = true,
+            lastStatus = "used",
+            historyNextCursor = "older-history",
+        ))
+        val electrum = FakeChain(emptySet(), fixedUsedAddress = address)
+        val esplora = FakeChain(emptySet(), fixedUsedAddress = address, fixedTransactionCount = 143).apply {
+            suppliesAddressSummary = true
+        }
+
+        SyncEngine(store, electrum, historyEnricher = esplora).syncAll()
+
+        assertEquals(143, store.singleState("single")!!.remoteCount)
+        assertEquals(0, esplora.pagedHistoryRequests)
+    }
+
+    @Test
     fun `high volume single address sync bypasses an Electrum history limit`() = runBlocking {
         val address = "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu"
         val store = MemoryStore(listOf(SyncWatchedKey("single", address, null, WatchTargetType.SINGLE_ADDRESS)))

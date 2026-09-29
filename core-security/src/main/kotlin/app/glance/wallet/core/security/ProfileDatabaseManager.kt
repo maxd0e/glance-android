@@ -72,8 +72,13 @@ class ProfileDatabaseManager(
     }
 
     fun deleteDecoy() {
-        AndroidKeystoreDatabaseKeyProvider(context, DECOY_DATABASE.removeSuffix(".db")).delete()
-        context.deleteDatabase(DECOY_DATABASE)
+        deleteProfileStorage(
+            databaseExists = { context.getDatabasePath(DECOY_DATABASE).exists() },
+            deleteDatabase = { context.deleteDatabase(DECOY_DATABASE) },
+            deleteKeyMaterial = {
+                AndroidKeystoreDatabaseKeyProvider(context, DECOY_DATABASE.removeSuffix(".db")).delete()
+            },
+        )
     }
 
     companion object {
@@ -82,4 +87,20 @@ class ProfileDatabaseManager(
         const val DECOY_PROFILE_ID = "configured"
         const val DURESS_WALLET_KEY_ID = "duress-bip84-wallet"
     }
+}
+
+/**
+ * A profile key must survive a failed database deletion so a later retry can still remove the
+ * encrypted database. The caller clears the corresponding credential only after this succeeds.
+ */
+internal fun deleteProfileStorage(
+    databaseExists: () -> Boolean,
+    deleteDatabase: () -> Boolean,
+    deleteKeyMaterial: () -> Unit,
+) {
+    if (databaseExists()) {
+        check(deleteDatabase()) { "Unable to delete encrypted database." }
+        check(!databaseExists()) { "Encrypted database remains after deletion." }
+    }
+    deleteKeyMaterial()
 }

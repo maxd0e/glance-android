@@ -11,6 +11,62 @@ import org.junit.Test
 
 class ServerPoolTest {
     @Test
+    fun `manifest without mempool keeps bootstrap fiat endpoint selectable`() {
+        val mempool = ServerDefinition.http(
+            ServerRole.MEMPOOL_SPACE,
+            "mempool-bootstrap",
+            "https://mempool.space/api/",
+        )
+        val pool = ServerPool(
+            listOf(
+                ServerDefinition.electrum("bootstrap.example", 50002),
+                ServerDefinition.esplora("https://bootstrap.example/api/"),
+                mempool,
+            ),
+        )
+
+        pool.replaceFromManifest(
+            ServerManifest(
+                version = 1,
+                expiresAtEpochSeconds = 4_000_000_000L,
+                endpoints = listOf(
+                    ServerDefinition.electrum("directory.example", 50002),
+                    ServerDefinition.esplora("https://directory.example/api/"),
+                ),
+            ),
+        )
+
+        assertEquals(mempool, pool.choose(ServerRole.MEMPOOL_SPACE))
+    }
+
+    @Test
+    fun `manifest mempool endpoint replaces bootstrap fiat endpoint`() {
+        val bootstrap = ServerDefinition.http(ServerRole.MEMPOOL_SPACE, "mempool-bootstrap", "https://mempool.space/api/")
+        val replacement = ServerDefinition.http(ServerRole.MEMPOOL_SPACE, "mempool-directory", "https://mempool.space/api/")
+        val pool = ServerPool(
+            listOf(
+                ServerDefinition.electrum("bootstrap.example", 50002),
+                ServerDefinition.esplora("https://bootstrap.example/api/"),
+                bootstrap,
+            ),
+        )
+
+        pool.replaceFromManifest(
+            ServerManifest(
+                version = 1,
+                expiresAtEpochSeconds = 4_000_000_000L,
+                endpoints = listOf(
+                    ServerDefinition.electrum("directory.example", 50002),
+                    ServerDefinition.esplora("https://directory.example/api/"),
+                    replacement,
+                ),
+            ),
+        )
+
+        assertEquals(replacement, pool.choose(ServerRole.MEMPOOL_SPACE))
+    }
+
+    @Test
     fun `restored endpoints without health rows remain selectable`() {
         val endpoint = ServerDefinition.electrum("restored.example", 50002)
         val store = InMemoryServerPoolStateStore().apply {

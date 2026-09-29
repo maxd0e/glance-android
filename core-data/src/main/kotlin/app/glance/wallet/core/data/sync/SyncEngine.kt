@@ -301,11 +301,19 @@ class SyncEngine(
             if (failure is CancellationException) throw failure
             status
         }
+        val remoteTransactionCount = summary.transactionCount ?: status.transactionCount
         val suppressUtxoSnapshot = summary.unspentOutputCount?.let { it > SINGLE_ADDRESS_UTXO_SNAPSHOT_LIMIT } == true
         val requiresHistoryRepair = address.historyComplete && (
             address.historyRemoteCount == null || address.historyRemoteCount > SINGLE_ADDRESS_INITIAL_HISTORY_LIMIT
         )
-        if (status.fingerprint == address.lastStatus && !requiresHistoryRepair) return 0
+        val requiresRemoteCountBackfill = address.historyRemoteCount == null && remoteTransactionCount != null
+        if (status.fingerprint == address.lastStatus && !requiresHistoryRepair) {
+            if (requiresRemoteCountBackfill) {
+                store.saveAddress(address.copy(historyRemoteCount = remoteTransactionCount))
+                return 1
+            }
+            return 0
+        }
         if (!status.hasActivity) {
             store.saveAddress(address.copy(
                 isUsed = false,
@@ -349,14 +357,14 @@ class SyncEngine(
             )
         }
         val snapshot = initialHistory.snapshot
-        val remoteHistoryCount = if (historyRetryNeeded) null else status.transactionCount
+        val remoteHistoryCount = if (historyRetryNeeded) null else remoteTransactionCount
             ?: initialHistory.snapshot.history.size.takeIf { initialHistory.isComplete }
         val updated = store.saveSingleAddressSnapshot(address.copy(
             isUsed = true,
             isConfirmedUnused = false,
             lastStatus = if (historyRetryNeeded) address.lastStatus else status.fingerprint,
         ), snapshot, remoteHistoryCount, initialHistory.nextCursor,
-            !historyRetryNeeded && (initialHistory.isComplete || status.transactionCount?.let { it <= snapshot.history.size } == true),
+            !historyRetryNeeded && (initialHistory.isComplete || remoteTransactionCount?.let { it <= snapshot.history.size } == true),
             suppressUtxoSnapshot = suppressUtxoSnapshot,
             unspentOutputCount = summary.unspentOutputCount)
         snapshot.history.mapNotNull { it.blockHeight }.distinct().forEach { height ->
