@@ -229,6 +229,7 @@ internal fun Phase7SettingsContent(
     var currencyExpanded by remember { mutableStateOf(false) }
     var explorerExpanded by remember { mutableStateOf(false) }
     var duressExpanded by remember { mutableStateOf(false) }
+    var stealthConfiguration by remember { mutableStateOf(false) }
 
     Scaffold(containerColor = GlanceBackground, topBar = { BackBar("Settings", onBack) }) { padding ->
         LazyColumn(
@@ -242,6 +243,8 @@ internal fun Phase7SettingsContent(
                 P7SettingSwitch("Haptic PIN", settings.hapticKeypad) { scope.launch { preferences.update { it.copy(hapticKeypad = !it.hapticKeypad) } } }
                 SettingsDivider()
                 P7SettingSwitch("Biometric unlock", settings.biometricEnabled, enabled = biometricAvailable, tag = "setting_biometric_unlock") { scope.launch { preferences.update { it.copy(biometricEnabled = !it.biometricEnabled) } } }
+                SettingsDivider()
+                P7SettingSwitch("Street mode", settings.streetModeEnabled, tag = "setting_street_mode") { scope.launch { preferences.update { it.copy(streetModeEnabled = !it.streetModeEnabled) } } }
             } }
             if (!biometricAvailable) item { Text("Device biometrics are not available or enrolled.", color = GlanceMuted, style = MaterialTheme.typography.bodySmall) }
             item { SettingsGroup("External settings", "settings_group_external") {
@@ -259,6 +262,8 @@ internal fun Phase7SettingsContent(
             } }
             item { SettingsGroup("App behavior", "settings_group_app_behavior") {
                 P7SettingSwitch("Screenshot block", settings.screenshotBlocking) { scope.launch { preferences.update { it.copy(screenshotBlocking = !it.screenshotBlocking) } } }
+                SettingsDivider()
+                SettingsDisclosureRow("Stealth mode", value = when (settings.stealthMode) { StealthMode.OFF -> "Off"; StealthMode.CALCULATOR -> "Calculator"; StealthMode.NOTES -> "Notes" }) { stealthConfiguration = true }
                 SettingsDivider()
                 SettingsDisclosureRow("Duress PIN", value = if (settings.credentials?.duressPinVerifier == null) "Not set" else "Configured") { duressExpanded = !duressExpanded }
                 if (duressExpanded) SettingsDivider()
@@ -284,6 +289,7 @@ internal fun Phase7SettingsContent(
         authentication.configureDuress(pin)
         setupDuress = false
     }
+    if (stealthConfiguration) StealthModeDialog(LocalContext.current, preferences, settings.stealthMode, settings.notesCodeword) { stealthConfiguration = false }
 }
 
 @Composable

@@ -22,13 +22,38 @@
         android:theme="@style/Theme.Glance">
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true" />
+        <activity-alias
+            android:name=".GlanceLauncherAlias"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+        <activity-alias
+            android:name=".CalculatorLauncherAlias"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_calculator_launcher"
+            android:label="Calculator"
+            android:targetActivity=".MainActivity">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".NotesLauncherAlias"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_notes_launcher"
+            android:label="Notes"
+            android:targetActivity=".MainActivity">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+        </activity-alias>
     </application>
 
 </manifest>

@@ -93,6 +93,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.navigation.NavType
 import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
@@ -136,8 +137,14 @@ internal fun utxoBubbleFill(tone: UtxoVisualTone): Color = when (tone) {
     UtxoVisualTone.STANDARD -> utxoBubbleFill
 }
 
+internal val LocalStreetMode = staticCompositionLocalOf { false }
+
 @Composable
 internal fun AmountText(sats: Long, modifier: Modifier = Modifier, large: Boolean = false, color: Color? = null) {
+    if (LocalStreetMode.current) {
+        Text(streetMaskedSats(), color = color ?: if (large) GlanceText else GlanceMuted, style = if (large) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.bodySmall, modifier = modifier)
+        return
+    }
     val parts = formatSats(sats)
     Text(
         text = buildAnnotatedString {
@@ -155,9 +162,10 @@ internal fun AmountText(sats: Long, modifier: Modifier = Modifier, large: Boolea
         style = if (large) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.bodyLarge,
     )
 }
-@Composable internal fun FiatAmountText(sats: Long, price: Double?, currency: String, modifier: Modifier = Modifier, large: Boolean = false, regularStyle: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodySmall) { val text = price?.let { NumberFormat.getCurrencyInstance().apply { this.currency = Currency.getInstance(currency) }.format(fiatValue(sats, it)) } ?: "Fiat price unavailable"; Text("≈ $text", color = if (large) GlanceText else GlanceMuted, style = if (large) MaterialTheme.typography.headlineMedium else regularStyle, modifier = modifier) }
+@Composable internal fun FiatAmountText(sats: Long, price: Double?, currency: String, modifier: Modifier = Modifier, large: Boolean = false, regularStyle: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodySmall) { val text = if (LocalStreetMode.current) streetMaskedFiat() else price?.let { NumberFormat.getCurrencyInstance().apply { this.currency = Currency.getInstance(currency) }.format(fiatValue(sats, it)) } ?: "Fiat price unavailable"; Text("≈ $text", color = if (large) GlanceText else GlanceMuted, style = if (large) MaterialTheme.typography.headlineMedium else regularStyle, modifier = modifier) }
 @Composable
 internal fun FiatCentsAmountText(cents: Long, currency: String, modifier: Modifier = Modifier, large: Boolean = false, regularStyle: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodySmall) {
+    if (LocalStreetMode.current) { Text("≈ ${streetMaskedFiat()}", color = if (large) GlanceText else GlanceMuted, style = if (large) MaterialTheme.typography.headlineMedium else regularStyle, modifier = modifier); return }
     Text(
         "≈ ${formatFiatCents(cents, currency)}",
         color = if (large) GlanceText else GlanceMuted,

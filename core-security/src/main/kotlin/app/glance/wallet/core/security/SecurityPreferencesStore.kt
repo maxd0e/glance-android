@@ -33,6 +33,16 @@ enum class ExplorerPreset { MEMPOOL_SPACE, BLOCKSTREAM }
 
 enum class UtxoView { BUBBLES, LIST }
 
+/** The only launcher identity enabled at a time. */
+enum class StealthMode { OFF, CALCULATOR, NOTES }
+
+data class StealthNote(
+    val id: String,
+    val body: String,
+    val createdAtMillis: Long,
+    val updatedAtMillis: Long,
+)
+
 data class SecurityPreferences(
     val credentials: PinCredentials? = null,
     val scrambleKeypad: Boolean = false,
@@ -45,6 +55,10 @@ data class SecurityPreferences(
     val utxoView: UtxoView = UtxoView.BUBBLES,
     val fiatCurrency: String = "USD",
     val explorerPreset: ExplorerPreset = ExplorerPreset.MEMPOOL_SPACE,
+    val stealthMode: StealthMode = StealthMode.OFF,
+    val notesCodeword: String? = null,
+    val stealthNotes: List<StealthNote> = emptyList(),
+    val streetModeEnabled: Boolean = false,
     /** True only while an old serialized CoinGecko key still needs to be overwritten. */
     internal val legacyCoinGeckoKeyPresent: Boolean = false,
     val retryState: RetryState = RetryState(),
@@ -186,6 +200,12 @@ private object SecurityPreferencesSerializer : Serializer<SecurityPreferences> {
             explorerPreset = fields["explorerPreset"]
                 ?.let { runCatching { ExplorerPreset.valueOf(it) }.getOrNull() }
                 ?: ExplorerPreset.MEMPOOL_SPACE,
+            stealthMode = fields["stealthMode"]
+                ?.let { runCatching { StealthMode.valueOf(it) }.getOrNull() }
+                ?: StealthMode.OFF,
+            notesCodeword = fields["notesCodeword"]?.takeIf(String::isNotEmpty)?.let(::decodeStealthText),
+            stealthNotes = fields["stealthNote"]?.split(',').orEmpty().mapNotNull(::decodeStealthNote),
+            streetModeEnabled = fields["streetMode"].toBoolean(),
             legacyCoinGeckoKeyPresent = fields.containsKey("coinGeckoDemoApiKey"),
             retryState = RetryState(fields["failures"]?.toIntOrNull() ?: 0, fields["next"]?.toLongOrNull() ?: 0L),
             duressRemovalPending = fields["duressRemovalPending"].toBoolean(),
@@ -207,11 +227,30 @@ private object SecurityPreferencesSerializer : Serializer<SecurityPreferences> {
             appendLine("utxoView=${t.utxoView.name}")
             appendLine("fiatCurrency=${t.fiatCurrency}")
             appendLine("explorerPreset=${t.explorerPreset.name}")
+            appendLine("stealthMode=${t.stealthMode.name}")
+            appendLine("notesCodeword=${t.notesCodeword?.let(::encodeStealthText).orEmpty()}")
+            appendLine("stealthNote=${t.stealthNotes.joinToString(",") { encodeStealthNote(it) }}")
+            appendLine("streetMode=${t.streetModeEnabled}")
             appendLine("failures=${t.retryState.failedAttempts}")
             appendLine("next=${t.retryState.nextAllowedAtMillis}")
             appendLine("duressRemovalPending=${t.duressRemovalPending}")
         }.encodeToByteArray())
     }
 }
+
+private fun encodeStealthText(value: String): String = Base64.encodeToString(value.encodeToByteArray(), Base64.NO_WRAP)
+private fun decodeStealthText(value: String): String = runCatching {
+    Base64.decode(value, Base64.NO_WRAP).decodeToString()
+}.getOrDefault("")
+
+private fun encodeStealthNote(note: StealthNote): String = encodeStealthText(
+    listOf(note.id, note.createdAtMillis, note.updatedAtMillis, encodeStealthText(note.body)).joinToString("|"),
+)
+
+private fun decodeStealthNote(value: String): StealthNote? = runCatching {
+    val parts = decodeStealthText(value).split('|')
+    require(parts.size == 4)
+    StealthNote(parts[0], decodeStealthText(parts[3]), parts[1].toLong(), parts[2].toLong())
+}.getOrNull()
 
 val FIAT_CURRENCIES = setOf("USD", "EUR", "GBP", "CAD", "CHF", "AUD", "JPY")

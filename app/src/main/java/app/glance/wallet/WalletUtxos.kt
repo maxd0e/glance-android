@@ -332,6 +332,10 @@ internal fun BubbleGrid(utxos: List<UtxoRow>, dustThresholdSats: Long, modifier:
 
 @Composable
 internal fun BubbleAmountText(sats: Long, diameter: Dp) {
+    if (LocalStreetMode.current) {
+        Text("••••", color = GlanceText, style = MaterialTheme.typography.labelSmall)
+        return
+    }
     val label = formatCompactUtxoBubbleAmount(sats)
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()

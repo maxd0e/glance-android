@@ -61,6 +61,8 @@ class MainActivity : FragmentActivity() {
         )
         lifecycleScope.launch { authentication.initialize() }
         setContent {
+            val launchMode = remember { launchStealthMode() }
+            var openGlance by remember { mutableStateOf(launchMode == StealthMode.OFF) }
             val authState by authentication.state.collectAsState()
             val settings by preferences.data.collectAsState<SecurityPreferences, SecurityPreferences?>(initial = null)
             val torState by torController.state.collectAsState()
@@ -91,14 +93,25 @@ class MainActivity : FragmentActivity() {
                     null -> Unit // Pre-PIN Tor bootstrap is intentionally kept alive; no network work is scheduled.
                 }
             }
+            LaunchedEffect(settings?.stealthMode) {
+                settings?.let { applyLauncherIdentity(applicationContext, it.stealthMode) }
+            }
             ApplyScreenshotBlocking(settings?.screenshotBlocking ?: true)
             GlanceTheme { Surface(Modifier.fillMaxSize(), color = GlanceBackground) {
                 val loadedSettings = settings
-                if (loadedSettings == null) Box(Modifier.fillMaxSize())
+                if (!openGlance && launchMode == StealthMode.CALCULATOR) CalculatorDisguise { openGlance = true }
+                else if (!openGlance && launchMode == StealthMode.NOTES && loadedSettings != null) NotesDisguise(preferences, loadedSettings.stealthNotes, loadedSettings.notesCodeword) { openGlance = true }
+                else if (loadedSettings == null) Box(Modifier.fillMaxSize())
                 else if (torGate(loadedSettings.torEnabled, torState, loadedSettings.offlineMode, initialTorBootstrap) == TorGate.PENDING) TorBootstrapScreen()
                 else GlanceApp(authState, loadedSettings, authentication, preferences, torController, ::requestBiometricUnlock)
             } }
         }
+    }
+
+    private fun launchStealthMode(): StealthMode = when {
+        intent.component?.className?.endsWith("CalculatorLauncherAlias") == true -> StealthMode.CALCULATOR
+        intent.component?.className?.endsWith("NotesLauncherAlias") == true -> StealthMode.NOTES
+        else -> StealthMode.OFF
     }
 
     override fun onStop() {
@@ -168,7 +181,7 @@ internal fun TorBootstrapScreen() = Box(
     AuthenticationState.RecoveryRequired -> DatabaseRecovery(authentication)
     AuthenticationState.EraseIncomplete -> DatabaseRecovery(authentication, eraseIncomplete = true)
     is AuthenticationState.Unlocked -> if (state.session.type == ProfileType.DECOY) {
-        DecoyPhase7Wallet(state.session, authentication, torController)
+        DecoyPhase7Wallet(state.session, authentication, torController, settings, preferences)
     } else {
         Phase7Wallet(state.session, settings, preferences, authentication, torController)
     }
