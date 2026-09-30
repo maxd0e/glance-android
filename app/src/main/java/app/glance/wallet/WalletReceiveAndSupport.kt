@@ -275,22 +275,29 @@ internal fun Phase7SettingsContent(
                 if (duressExpanded) SettingsDivider()
             } }
             if (duressExpanded) {
-            item { Text("Creates an isolated, automatically generated Native SegWit decoy wallet. Its real balance, history, and UTXOs sync through Tor only.", color = GlanceMuted, style = MaterialTheme.typography.bodySmall) }
-            item { DuressForensicLimitationNotice() }
-            if (settings.credentials?.duressPinVerifier == null) {
-                item { Text("Not activated", color = GlanceMuted, modifier = Modifier.testTag("duress_not_activated")) }
-                item { Button(onClick = { setupDuress = true }, shape = settingsActionButtonShape, colors = ButtonDefaults.buttonColors(containerColor = GlanceMandarin, contentColor = GlanceBackground), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Set up duress profile") } }
-            } else {
-                item { OutlinedButton(onClick = { removeDuressConfirmation = true }, modifier = Modifier.fillMaxWidth().testTag("remove_duress_profile")) { Text("Remove duress profile") } }
-            }
+                item {
+                    SettingsGroup("Duress profile", "settings_group_duress_profile") {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("Creates an isolated, automatically generated Native SegWit decoy wallet. Its real balance, history, and UTXOs sync through Tor only.", color = GlanceMuted, style = MaterialTheme.typography.bodySmall)
+                            DuressForensicLimitationNotice()
+                            if (settings.credentials?.duressPinVerifier == null) {
+                                Text("Not activated", color = GlanceMuted, modifier = Modifier.testTag("duress_not_activated"))
+                                Button(onClick = { setupDuress = true }, shape = settingsActionButtonShape, colors = ButtonDefaults.buttonColors(containerColor = GlanceMandarin, contentColor = GlanceBackground), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Set up duress profile") }
+                            } else {
+                                SettingsDivider()
+                                SettingsDisclosureRow("Remove duress profile", modifier = Modifier.testTag("remove_duress_profile"), warning = true) { removeDuressConfirmation = true }
+                            }
+                        }
+                    }
+                }
             }
             item { SettingsGroup("Support", "settings_group_support") { SettingsDisclosureRow("Support Glance", icon = { Icon(Icons.Filled.Favorite, contentDescription = null, tint = GlanceMandarin, modifier = Modifier.size(14.dp)) }, onClick = onSupport) } }
             item { SettingsGroup("About", "settings_group_about") { SettingsValueRow("Version", BuildConfig.VERSION_NAME) } }
             item { SettingsGroup("Troubleshooting", "settings_group_troubleshooting") { SettingsDisclosureRow("Erase all data", value = null, warning = true) { eraseConfirmation = true } } }
         }
     }
-    if (eraseConfirmation) AlertDialog(onDismissRequest = { eraseConfirmation = false }, containerColor = GlanceSurface, titleContentColor = GlanceText, textContentColor = GlanceMuted, title = { Text("Erase all data?") }, text = { Text("This permanently deletes both encrypted wallet profiles, security settings, local cached data, and cached Tor state. This cannot be undone.") }, confirmButton = { Button(onClick = { scope.launch { authentication.eraseAllData() } }, shape = settingsActionButtonShape, colors = ButtonDefaults.buttonColors(containerColor = GlanceWarning, contentColor = GlanceText)) { Text("Erase permanently") } }, dismissButton = { TextButton(onClick = { eraseConfirmation = false }, colors = ButtonDefaults.textButtonColors(contentColor = GlanceText)) { Text("Cancel") } })
-    if (removeDuressConfirmation) AlertDialog(onDismissRequest = { removeDuressConfirmation = false }, containerColor = GlanceSurface, titleContentColor = GlanceText, textContentColor = GlanceMuted, title = { Text("Remove duress profile?") }, text = { Text("This permanently deletes the duress PIN, generated recovery phrase, encrypted decoy database, and wallet history. Your real wallet remains unchanged.") }, confirmButton = { Button(onClick = { removeDuressConfirmation = false; scope.launch { authentication.removeDuressProfile() } }, shape = settingsActionButtonShape, colors = ButtonDefaults.buttonColors(containerColor = GlanceWarning, contentColor = GlanceText)) { Text("Remove permanently") } }, dismissButton = { TextButton(onClick = { removeDuressConfirmation = false }, colors = ButtonDefaults.textButtonColors(contentColor = GlanceText)) { Text("Cancel") } })
+    if (eraseConfirmation) DestructiveConfirmationDialog(title = "Erase all data?", message = "This permanently deletes both encrypted wallet profiles, security settings, local cached data, and cached Tor state. This cannot be undone.", confirmLabel = "Erase permanently", onDismiss = { eraseConfirmation = false }) { scope.launch { authentication.eraseAllData() } }
+    if (removeDuressConfirmation) DestructiveConfirmationDialog(title = "Remove duress profile?", message = "This permanently deletes the duress PIN, generated recovery phrase, encrypted decoy database, and wallet history. Your real wallet remains unchanged.", confirmLabel = "Remove permanently", onDismiss = { removeDuressConfirmation = false }) { removeDuressConfirmation = false; scope.launch { authentication.removeDuressProfile() } }
     if (setupDuress) DuressSetupDialog(onDismiss = { setupDuress = false }) { pin ->
         authentication.configureDuress(pin)
         setupDuress = false

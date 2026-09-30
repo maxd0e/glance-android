@@ -332,6 +332,38 @@ internal fun SettingsValueRow(label: String, value: String) = Row(
     Text(label, Modifier.weight(1f), color = GlanceText, style = MaterialTheme.typography.bodyMedium)
     Text(value, color = GlanceMuted, style = MaterialTheme.typography.bodySmall)
 }
+
+@Composable
+internal fun DestructiveConfirmationDialog(
+    title: String,
+    message: String,
+    confirmLabel: String,
+    dismissLabel: String = "Cancel",
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) = AlertDialog(
+    onDismissRequest = onDismiss,
+    containerColor = GlanceSurface,
+    titleContentColor = GlanceText,
+    textContentColor = GlanceMuted,
+    title = { Text(title) },
+    text = { Text(message) },
+    confirmButton = {
+        Button(
+            onClick = onConfirm,
+            shape = walletSettingsDeleteActionShape,
+            colors = ButtonDefaults.buttonColors(containerColor = GlanceWarning, contentColor = GlanceText),
+            modifier = Modifier.testTag("destructive_confirmation_confirm"),
+        ) { Text(confirmLabel) }
+    },
+    dismissButton = {
+        TextButton(
+            onClick = onDismiss,
+            colors = ButtonDefaults.textButtonColors(contentColor = GlanceText),
+            modifier = Modifier.testTag("destructive_confirmation_cancel"),
+        ) { Text(dismissLabel) }
+    },
+)
 internal fun copy(context: Context, value: String) {
     val clip = ClipData.newPlainText("Bitcoin value", value)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

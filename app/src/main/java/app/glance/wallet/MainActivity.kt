@@ -525,6 +525,7 @@ internal fun DuressSetupDialog(onDismiss: () -> Unit, onConfigured: suspend (Str
                     }
                 },
                 enabled = !creating,
+                shape = settingsActionButtonShape,
                 colors = ButtonDefaults.buttonColors(containerColor = GlanceMandarin),
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp).testTag("duress_create_profile"),
             ) { Text("Create profile") }

@@ -767,6 +767,7 @@ class WalletContentTest {
         }
         composeRule.onNodeWithTag("wallet_settings_group_wallet").assertIsDisplayed()
         composeRule.onNodeWithTag("wallet_settings_group_danger").assertIsDisplayed()
+        composeRule.onNodeWithTag("delete_watched_key").assertIsDisplayed()
         composeRule.onNodeWithTag("wallet_setting_utxo_view").performClick()
         composeRule.onNodeWithText("List").performClick()
         composeRule.waitUntil(5_000) {
@@ -786,11 +787,11 @@ class WalletContentTest {
             runBlocking { database.watchedKeyDao().findById("wallet")?.label == "Renamed" }
         }
         assertTrue(returned)
-        composeRule.onNodeWithText("Delete watched key").performClick()
+        composeRule.onNodeWithTag("delete_watched_key").performClick()
         composeRule.onNodeWithText("Delete watched key?").assertIsDisplayed()
-        composeRule.onNodeWithText("No").performClick()
-        composeRule.onNodeWithText("Delete watched key").performClick()
-        composeRule.onNodeWithText("Yes").performClick()
+        composeRule.onNodeWithTag("destructive_confirmation_cancel").performClick()
+        composeRule.onNodeWithTag("delete_watched_key").performClick()
+        composeRule.onNodeWithTag("destructive_confirmation_confirm").performClick()
         composeRule.waitUntil(5_000) {
             runBlocking { database.watchedKeyDao().findById("wallet") == null }
         }

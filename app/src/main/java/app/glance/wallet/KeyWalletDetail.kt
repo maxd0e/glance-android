@@ -334,27 +334,20 @@ internal fun WalletSettingsScreen(database: GlanceDatabase, keyId: String, prefe
                 SettingsGroup("Danger zone", "wallet_settings_group_danger") {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Deleting this watched key removes only its cached addresses, transactions, UTXOs, and labels.", color = GlanceMuted, style = MaterialTheme.typography.bodySmall)
-                        Button(
-                            onClick = { deleteConfirmation = true },
-                            shape = walletSettingsDeleteActionShape,
-                            colors = ButtonDefaults.buttonColors(containerColor = walletSettingsDeleteActionColor, contentColor = GlanceText),
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                        ) { Text("Delete watched key") }
+                        SettingsDivider()
+                        SettingsDisclosureRow("Delete watched key", modifier = Modifier.testTag("delete_watched_key"), warning = true) { deleteConfirmation = true }
                     }
                 }
             }
         }
     }
-    if (deleteConfirmation) AlertDialog(
-        onDismissRequest = { deleteConfirmation = false },
-        containerColor = walletSettingsDialogColor,
-        titleContentColor = GlanceText,
-        textContentColor = GlanceMuted,
-        title = { Text("Delete watched key?") },
-        text = { Text("Are you sure you want to delete? This removes only this key and its cached wallet data.") },
-        confirmButton = { Button(onClick = { scope.launch { database.watchedKeyDao().deleteWithOwnedData(keyId); onDeleted() } }, shape = walletSettingsDeleteActionShape, colors = ButtonDefaults.buttonColors(containerColor = walletSettingsDeleteActionColor, contentColor = GlanceText)) { Text("Yes") } },
-        dismissButton = { TextButton(onClick = { deleteConfirmation = false }, colors = ButtonDefaults.textButtonColors(contentColor = GlanceText)) { Text("No") } },
-    )
+    if (deleteConfirmation) DestructiveConfirmationDialog(
+        title = "Delete watched key?",
+        message = "Are you sure you want to delete? This removes only this key and its cached wallet data.",
+        confirmLabel = "Yes",
+        dismissLabel = "No",
+        onDismiss = { deleteConfirmation = false },
+    ) { scope.launch { database.watchedKeyDao().deleteWithOwnedData(keyId); onDeleted() } }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -433,31 +426,33 @@ internal fun GroupWalletSettingsScreen(database: GlanceDatabase, groupId: String
                 SettingsGroup("Danger zone", "group_wallet_settings_group_danger") {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Deleting this wallet removes every format and its cached addresses, transactions, UTXOs, and labels.", color = GlanceMuted, style = MaterialTheme.typography.bodySmall)
-                        Button(onClick = { deleteGroupConfirmation = true }, shape = walletSettingsDeleteActionShape, colors = ButtonDefaults.buttonColors(containerColor = walletSettingsDeleteActionColor, contentColor = GlanceText), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Delete wallet") }
+                        SettingsDivider()
+                        SettingsDisclosureRow("Delete wallet", modifier = Modifier.testTag("delete_wallet"), warning = true) { deleteGroupConfirmation = true }
                     }
                 }
             }
         }
     }
     keyToRemove?.let { key ->
-        AlertDialog(
-            onDismissRequest = { keyToRemove = null }, containerColor = walletSettingsDialogColor, titleContentColor = GlanceText, textContentColor = GlanceMuted,
-            title = { Text("Remove ${key.scriptType.displayName()}?") },
-            text = { Text("This removes only this format and its cached wallet data. Other formats remain in this wallet.") },
-            confirmButton = { Button(onClick = { scope.launch {
+        DestructiveConfirmationDialog(
+            title = "Remove ${key.scriptType.displayName()}?",
+            message = "This removes only this format and its cached wallet data. Other formats remain in this wallet.",
+            confirmLabel = "Remove",
+            onDismiss = { keyToRemove = null },
+        ) { scope.launch {
                 if (key.scriptType == group!!.preferredReceiveScriptType) keys.firstOrNull { it.id != key.id }?.let { database.walletGroupDao().setPreferredReceiveScriptType(groupId, it.scriptType) }
                 database.watchedKeyDao().deleteWithOwnedData(key.id)
                 keyToRemove = null
                 onDeleted()
-            } }, shape = walletSettingsDeleteActionShape, colors = ButtonDefaults.buttonColors(containerColor = walletSettingsDeleteActionColor, contentColor = GlanceText), modifier = Modifier.testTag("confirm_group_format_removal")) { Text("Remove") } },
-            dismissButton = { TextButton(onClick = { keyToRemove = null }, colors = ButtonDefaults.textButtonColors(contentColor = GlanceText)) { Text("Cancel") } },
-        )
+            }
+        }
     }
-    if (deleteGroupConfirmation) AlertDialog(
-        onDismissRequest = { deleteGroupConfirmation = false }, containerColor = walletSettingsDialogColor, titleContentColor = GlanceText, textContentColor = GlanceMuted,
-        title = { Text("Delete wallet?") }, text = { Text("Are you sure you want to delete every format in this wallet and its cached data?") },
-        confirmButton = { Button(onClick = { scope.launch { database.walletGroupDao().deleteWithOwnedData(groupId, database.watchedKeyDao()); onDeleted() } }, shape = walletSettingsDeleteActionShape, colors = ButtonDefaults.buttonColors(containerColor = walletSettingsDeleteActionColor, contentColor = GlanceText)) { Text("Yes") } },
-        dismissButton = { TextButton(onClick = { deleteGroupConfirmation = false }, colors = ButtonDefaults.textButtonColors(contentColor = GlanceText)) { Text("No") } },
-    )
+    if (deleteGroupConfirmation) DestructiveConfirmationDialog(
+        title = "Delete wallet?",
+        message = "Are you sure you want to delete every format in this wallet and its cached data?",
+        confirmLabel = "Yes",
+        dismissLabel = "No",
+        onDismiss = { deleteGroupConfirmation = false },
+    ) { scope.launch { database.walletGroupDao().deleteWithOwnedData(groupId, database.watchedKeyDao()); onDeleted() } }
 }
 
