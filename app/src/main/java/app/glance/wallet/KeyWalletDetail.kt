@@ -268,6 +268,8 @@ internal fun WalletSettingsScreen(database: GlanceDatabase, keyId: String, prefe
         LaunchedEffect(keyId) { onDeleted() }
         return
     }
+    val isSingleAddress = watchedKey!!.targetType == WatchTargetType.SINGLE_ADDRESS
+    val watchedTargetLabel = if (isSingleAddress) "watched address" else "watched key"
     Scaffold(containerColor = GlanceBackground, topBar = { BackBar("Wallet settings", onBack) }) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding).padding(horizontal = HomeScreenGutter),
@@ -333,17 +335,17 @@ internal fun WalletSettingsScreen(database: GlanceDatabase, keyId: String, prefe
             item {
                 SettingsGroup("Danger zone", "wallet_settings_group_danger") {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Deleting this watched key removes only its cached addresses, transactions, UTXOs, and labels.", color = GlanceMuted, style = MaterialTheme.typography.bodySmall)
+                        Text("Deleting this $watchedTargetLabel removes only its cached addresses, transactions, UTXOs, and labels.", color = GlanceMuted, style = MaterialTheme.typography.bodySmall)
                         SettingsDivider()
-                        SettingsDisclosureRow("Delete watched key", modifier = Modifier.testTag("delete_watched_key"), warning = true) { deleteConfirmation = true }
+                        SettingsDisclosureRow("Delete $watchedTargetLabel", modifier = Modifier.testTag("delete_watched_key"), warning = true) { deleteConfirmation = true }
                     }
                 }
             }
         }
     }
     if (deleteConfirmation) DestructiveConfirmationDialog(
-        title = "Delete watched key?",
-        message = "Are you sure you want to delete? This removes only this key and its cached wallet data.",
+        title = "Delete $watchedTargetLabel?",
+        message = "Are you sure you want to delete? This removes only this ${if (isSingleAddress) "address" else "key"} and its cached wallet data.",
         confirmLabel = "Yes",
         dismissLabel = "No",
         onDismiss = { deleteConfirmation = false },

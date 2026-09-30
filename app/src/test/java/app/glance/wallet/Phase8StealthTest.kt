@@ -99,6 +99,16 @@ class Phase8StealthTest {
         assertTrue(gate.isGlanceOpen)
     }
 
+    @Test fun `calculator launcher re-gates a task originally opened through Glance`() {
+        val gate = StealthDisguiseGate(StealthMode.OFF)
+        assertTrue(gate.isGlanceOpen)
+
+        gate.enterLauncher(StealthMode.CALCULATOR)
+
+        assertEquals(StealthMode.CALCULATOR, gate.launchMode)
+        assertFalse(gate.isGlanceOpen)
+    }
+
     private fun calculated(operation: CalculatorOperation, number1: String, number2: String): CalculatorState =
         number1.fold(CalculatorState()) { state, digit -> state.reduce(CalculatorAction.Digit(digit.digitToInt())) }
             .reduce(CalculatorAction.Operation(operation))

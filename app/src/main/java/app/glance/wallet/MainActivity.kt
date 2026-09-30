@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.content.Context
+import android.content.Intent
 import android.view.HapticFeedbackConstants
 import android.view.WindowManager
 import androidx.activity.compose.LocalActivity
@@ -63,7 +64,6 @@ class MainActivity : FragmentActivity() {
         stealthGate = StealthDisguiseGate(launchStealthMode())
         lifecycleScope.launch { authentication.initialize() }
         setContent {
-            val launchMode = remember { launchStealthMode() }
             val authState by authentication.state.collectAsState()
             val settings by preferences.data.collectAsState<SecurityPreferences, SecurityPreferences?>(initial = null)
             val torState by torController.state.collectAsState()
@@ -100,7 +100,7 @@ class MainActivity : FragmentActivity() {
             ApplyScreenshotBlocking(settings?.screenshotBlocking ?: true)
             GlanceTheme { Surface(Modifier.fillMaxSize(), color = GlanceBackground) {
                 val loadedSettings = settings
-                if (!stealthGate.isGlanceOpen && launchMode == StealthMode.CALCULATOR) CalculatorDisguise(stealthGate::openGlance)
+                if (!stealthGate.isGlanceOpen && stealthGate.launchMode == StealthMode.CALCULATOR) CalculatorDisguise(stealthGate::openGlance)
                 else if (loadedSettings == null) Box(Modifier.fillMaxSize())
                 else if (torGate(loadedSettings.torEnabled, torState, loadedSettings.offlineMode, initialTorBootstrap) == TorGate.PENDING) TorBootstrapScreen()
                 else GlanceApp(authState, loadedSettings, authentication, preferences, torController, ::requestBiometricUnlock)
@@ -111,6 +111,12 @@ class MainActivity : FragmentActivity() {
     private fun launchStealthMode(): StealthMode = when {
         intent.component?.className?.endsWith("CalculatorLauncherAlias") == true -> StealthMode.CALCULATOR
         else -> StealthMode.OFF
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        stealthGate.enterLauncher(launchStealthMode())
     }
 
     override fun onStop() {

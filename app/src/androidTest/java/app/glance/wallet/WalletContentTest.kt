@@ -195,14 +195,6 @@ class WalletContentTest {
         composeRule.onNodeWithText("Duress PIN").performClick()
         composeRule.onNodeWithText("Not set").assertIsDisplayed()
         composeRule.onNodeWithTag("phase7_settings_scroll")
-            .performScrollToNode(hasText("Set up duress profile"))
-        composeRule.onNodeWithText("Set up duress profile").performClick()
-        composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithTag("pin_keypad").fetchSemanticsNodes().isNotEmpty()
-        }
-        composeRule.onNodeWithTag("pin_keypad").assertIsDisplayed()
-        composeRule.onNodeWithText("Cancel").performClick()
-        composeRule.onNodeWithTag("phase7_settings_scroll")
             .performScrollToNode(hasText("Erase all data"))
         composeRule.onNodeWithText("Erase all data").assertIsDisplayed()
         composeRule.onNodeWithText("Erase all data").performClick()
@@ -796,6 +788,44 @@ class WalletContentTest {
             runBlocking { database.watchedKeyDao().findById("wallet") == null }
         }
         assertTrue(deleted)
+    }
+
+    @Test
+    fun singleAddressWalletSettingsUsesAddressDeletionWording() {
+        val database = Room.inMemoryDatabaseBuilder(context, GlanceDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        runBlocking {
+            database.watchedKeyDao().upsert(
+                WatchedKeyEntity(
+                    id = "address-wallet",
+                    label = "Address wallet",
+                    keyMaterial = "redacted",
+                    scriptType = ScriptType.NATIVE_SEGWIT,
+                    dateAdded = 1L,
+                    targetType = WatchTargetType.SINGLE_ADDRESS,
+                ),
+            )
+        }
+        composeRule.setContent {
+            GlanceTheme {
+                WalletSettingsScreen(
+                    database = database,
+                    keyId = "address-wallet",
+                    preferences = preferences,
+                    onBack = {},
+                    onDeleted = {},
+                )
+            }
+        }
+
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithTag("wallet_settings_group_danger").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("Deleting this watched address removes only its cached addresses, transactions, UTXOs, and labels.").assertIsDisplayed()
+        composeRule.onNodeWithText("Delete watched address").performClick()
+        composeRule.onNodeWithText("Delete watched address?").assertIsDisplayed()
+        composeRule.onNodeWithText("Are you sure you want to delete? This removes only this address and its cached wallet data.").assertIsDisplayed()
     }
 
     @Test

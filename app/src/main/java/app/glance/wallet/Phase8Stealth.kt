@@ -53,8 +53,11 @@ internal fun stealthModeOptions(): List<StealthMode> = listOf(StealthMode.OFF, S
 internal fun streetMaskedSats(): String = "•••• sats"
 internal fun streetMaskedFiat(): String = "••••"
 
-/** Keeps a stealth launcher behind its disguise whenever the activity is backgrounded. */
-internal class StealthDisguiseGate(private val launchMode: StealthMode) {
+/** Keeps a stealth launcher behind its disguise whenever the activity is backgrounded or relaunched. */
+internal class StealthDisguiseGate(initialLaunchMode: StealthMode) {
+    var launchMode by mutableStateOf(initialLaunchMode)
+        private set
+
     var isGlanceOpen by mutableStateOf(launchMode == StealthMode.OFF)
         private set
 
@@ -64,6 +67,12 @@ internal class StealthDisguiseGate(private val launchMode: StealthMode) {
 
     fun reenterDisguise() {
         isGlanceOpen = launchMode == StealthMode.OFF
+    }
+
+    /** Re-gates an existing activity task when Android delivers a different launcher alias. */
+    fun enterLauncher(mode: StealthMode) {
+        launchMode = mode
+        reenterDisguise()
     }
 }
 
