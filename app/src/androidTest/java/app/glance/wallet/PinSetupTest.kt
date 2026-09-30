@@ -155,6 +155,25 @@ class PinSetupTest {
     }
 
     @Test
+    fun duressPinStepsKeepTheReferencePinCompositionFreeOfExtraActions() {
+        composeRule.setContent {
+            GlanceTheme {
+                DuressSetupDialog(onDismiss = {}) { }
+            }
+        }
+
+        composeRule.onNodeWithText("Set up duress PIN").assertIsDisplayed()
+        composeRule.onNodeWithTag("pin_keypad").assertWidthIsEqualTo(280.dp)
+        composeRule.onAllNodesWithText("Cancel").assertCountEquals(0)
+
+        enterPin("654321")
+
+        composeRule.onNodeWithText("Confirm duress PIN").assertIsDisplayed()
+        composeRule.onNodeWithTag("pin_keypad").assertWidthIsEqualTo(280.dp)
+        composeRule.onAllNodesWithText("Cancel").assertCountEquals(0)
+    }
+
+    @Test
     fun duressSetupShowsRetryableErrorWhenCreationFails() {
         composeRule.setContent {
             GlanceTheme {

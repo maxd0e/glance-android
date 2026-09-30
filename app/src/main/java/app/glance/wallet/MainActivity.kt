@@ -503,14 +503,12 @@ internal fun DuressSetupDialog(onDismiss: () -> Unit, onConfigured: suspend (Str
     when (step) {
         0 -> PinEntryPage("Set up duress PIN", "Choose a separate six-digit PIN.") {
             PinKeypad(pin, false, true, onAutoSubmit = { error = null; step = 1 }) { pin = it }
-            OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) { Text("Cancel") }
         }
         1 -> PinEntryPage("Confirm duress PIN", "Enter the same six digits again.") {
             PinKeypad(confirmation, false, true, onAutoSubmit = { submittedPin ->
                 if (submittedPin == pin) { error = null; step = 2 } else { confirmation = ""; error = "PINs do not match." }
             }) { confirmation = it }
             error?.let { Text(it, color = GlanceWarning, modifier = Modifier.padding(top = 12.dp)) }
-            OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) { Text("Cancel") }
         }
         else -> PinEntryPage("Create duress wallet", "A fresh 12-word Native SegWit decoy wallet will be generated. It is not intended to receive funds.") {
             Button(
@@ -525,16 +523,26 @@ internal fun DuressSetupDialog(onDismiss: () -> Unit, onConfigured: suspend (Str
                     }
                 },
                 enabled = !creating,
-                shape = settingsActionButtonShape,
-                colors = ButtonDefaults.buttonColors(containerColor = GlanceMandarin),
-                modifier = Modifier.fillMaxWidth().padding(top = 16.dp).testTag("duress_create_profile"),
+                shape = GlancePillShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = GlanceMandarin,
+                    contentColor = GlanceBackground,
+                    disabledContainerColor = GlanceSurface,
+                    disabledContentColor = GlanceMuted,
+                ),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(top = 16.dp).testTag("duress_create_profile"),
             ) { Text("Create profile") }
             if (creating) Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), color = GlanceMandarin, strokeWidth = 2.dp)
                 Text("Creating duress profile…", color = GlanceMuted)
             }
             error?.let { Text(it, color = GlanceWarning, modifier = Modifier.padding(top = 12.dp)) }
-            OutlinedButton(onClick = onDismiss, enabled = !creating, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) { Text("Cancel") }
+            TextButton(
+                onClick = onDismiss,
+                enabled = !creating,
+                colors = ButtonDefaults.textButtonColors(contentColor = GlanceText),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(top = 8.dp),
+            ) { Text("Cancel") }
         }
     }
 }
