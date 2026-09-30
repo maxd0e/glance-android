@@ -40,8 +40,9 @@
             android:name=".CalculatorLauncherAlias"
             android:enabled="false"
             android:exported="true"
-            android:icon="@drawable/ic_calculator_launcher"
+            android:icon="@mipmap/ic_calculator_launcher"
             android:label="Calculator"
+            android:roundIcon="@mipmap/ic_calculator_launcher_round"
             android:targetActivity=".MainActivity">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity-alias>
