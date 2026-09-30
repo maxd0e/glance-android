@@ -45,6 +45,20 @@ internal fun notesCodewordMatches(codeword: String, candidate: String): Boolean 
 internal fun streetMaskedSats(): String = "•••• sats"
 internal fun streetMaskedFiat(): String = "••••"
 
+/** Keeps a stealth launcher behind its disguise whenever the activity is backgrounded. */
+internal class StealthDisguiseGate(private val launchMode: StealthMode) {
+    var isGlanceOpen by mutableStateOf(launchMode == StealthMode.OFF)
+        private set
+
+    fun openGlance() {
+        isGlanceOpen = true
+    }
+
+    fun reenterDisguise() {
+        isGlanceOpen = launchMode == StealthMode.OFF
+    }
+}
+
 /** Pure state makes the sensor threshold/window behavior independently testable. */
 internal data class ShakeState(val firstPeakMillis: Long? = null, val cooldownUntilMillis: Long = 0, val toggled: Boolean = false) {
     fun recordPeak(atMillis: Long): ShakeState = when {

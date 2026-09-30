@@ -1,5 +1,7 @@
 package app.glance.wallet
 
+import app.glance.wallet.core.security.StealthMode
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -32,5 +34,24 @@ class Phase8StealthTest {
     @Test fun `street mode masks every monetary display`() {
         assertEquals("•••• sats", streetMaskedSats())
         assertEquals("••••", streetMaskedFiat())
+    }
+    @Test fun `disguised launcher requires its unlock flow again after backgrounding`() {
+        val gate = StealthDisguiseGate(StealthMode.CALCULATOR)
+
+        assertFalse(gate.isGlanceOpen)
+        gate.openGlance()
+        assertTrue(gate.isGlanceOpen)
+
+        gate.reenterDisguise()
+
+        assertFalse(gate.isGlanceOpen)
+    }
+
+    @Test fun `normal launcher does not show a disguise after backgrounding`() {
+        val gate = StealthDisguiseGate(StealthMode.OFF)
+
+        gate.reenterDisguise()
+
+        assertTrue(gate.isGlanceOpen)
     }
 }

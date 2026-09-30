@@ -47,6 +47,7 @@ class MainActivity : FragmentActivity() {
     private lateinit var torController: TorController
     private lateinit var profiles: ProfileDatabaseManager
     private lateinit var authentication: AuthenticationCoordinator
+    private lateinit var stealthGate: StealthDisguiseGate
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,10 +60,10 @@ class MainActivity : FragmentActivity() {
             torStateCleaner = torController,
             eraseStateStore = FileEraseStateStore(File(applicationContext.noBackupFilesDir, "erase-incomplete.marker")),
         )
+        stealthGate = StealthDisguiseGate(launchStealthMode())
         lifecycleScope.launch { authentication.initialize() }
         setContent {
             val launchMode = remember { launchStealthMode() }
-            var openGlance by remember { mutableStateOf(launchMode == StealthMode.OFF) }
             val authState by authentication.state.collectAsState()
             val settings by preferences.data.collectAsState<SecurityPreferences, SecurityPreferences?>(initial = null)
             val torState by torController.state.collectAsState()
@@ -99,8 +100,8 @@ class MainActivity : FragmentActivity() {
             ApplyScreenshotBlocking(settings?.screenshotBlocking ?: true)
             GlanceTheme { Surface(Modifier.fillMaxSize(), color = GlanceBackground) {
                 val loadedSettings = settings
-                if (!openGlance && launchMode == StealthMode.CALCULATOR) CalculatorDisguise { openGlance = true }
-                else if (!openGlance && launchMode == StealthMode.NOTES && loadedSettings != null) NotesDisguise(preferences, loadedSettings.stealthNotes, loadedSettings.notesCodeword) { openGlance = true }
+                if (!stealthGate.isGlanceOpen && launchMode == StealthMode.CALCULATOR) CalculatorDisguise(stealthGate::openGlance)
+                else if (!stealthGate.isGlanceOpen && launchMode == StealthMode.NOTES && loadedSettings != null) NotesDisguise(preferences, loadedSettings.stealthNotes, loadedSettings.notesCodeword, stealthGate::openGlance)
                 else if (loadedSettings == null) Box(Modifier.fillMaxSize())
                 else if (torGate(loadedSettings.torEnabled, torState, loadedSettings.offlineMode, initialTorBootstrap) == TorGate.PENDING) TorBootstrapScreen()
                 else GlanceApp(authState, loadedSettings, authentication, preferences, torController, ::requestBiometricUnlock)
@@ -116,6 +117,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onStop() {
         super.onStop()
+        stealthGate.reenterDisguise()
         authentication.lock()
         (application as GlanceApplication).setNetworkSessionActive(false, torEnabled = true)
     }

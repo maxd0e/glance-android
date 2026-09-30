@@ -244,7 +244,11 @@ internal fun Phase7SettingsContent(
                 SettingsDivider()
                 P7SettingSwitch("Biometric unlock", settings.biometricEnabled, enabled = biometricAvailable, tag = "setting_biometric_unlock") { scope.launch { preferences.update { it.copy(biometricEnabled = !it.biometricEnabled) } } }
                 SettingsDivider()
-                P7SettingSwitch("Street mode", settings.streetModeEnabled, tag = "setting_street_mode") { scope.launch { preferences.update { it.copy(streetModeEnabled = !it.streetModeEnabled) } } }
+                if (settings.streetModeEnabled) {
+                    P7SettingSwitch("Street mode", checked = true, tag = "setting_street_mode") { enabled ->
+                        if (!enabled) scope.launch { preferences.update { it.copy(streetModeEnabled = false) } }
+                    }
+                }
             } }
             if (!biometricAvailable) item { Text("Device biometrics are not available or enrolled.", color = GlanceMuted, style = MaterialTheme.typography.bodySmall) }
             item { SettingsGroup("External settings", "settings_group_external") {
