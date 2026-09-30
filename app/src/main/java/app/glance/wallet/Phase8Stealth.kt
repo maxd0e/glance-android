@@ -8,6 +8,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
@@ -16,14 +17,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -37,6 +36,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -44,13 +46,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import app.glance.wallet.core.security.SecurityPreferencesStore
 import app.glance.wallet.core.security.StealthMode
-import app.glance.wallet.core.security.StealthNote
-import java.util.UUID
 import kotlinx.coroutines.launch
 import kotlin.math.sqrt
 
-internal fun isValidNotesCodeword(value: String): Boolean = value.length in 4..64
-internal fun notesCodewordMatches(codeword: String, candidate: String): Boolean = codeword == candidate
+internal fun stealthModeOptions(): List<StealthMode> = listOf(StealthMode.OFF, StealthMode.CALCULATOR)
 internal fun streetMaskedSats(): String = "•••• sats"
 internal fun streetMaskedFiat(): String = "••••"
 
@@ -114,7 +113,6 @@ internal fun applyLauncherIdentity(context: Context, mode: StealthMode) {
     val components = mapOf(
         StealthMode.OFF to "GlanceLauncherAlias",
         StealthMode.CALCULATOR to "CalculatorLauncherAlias",
-        StealthMode.NOTES to "NotesLauncherAlias",
     )
     components.forEach { (candidate, className) ->
         packageManager.setComponentEnabledSetting(
@@ -289,72 +287,53 @@ private val CalculatorOperatorKey = Color(0xFFFF9800)
     }
 }
 
-@Composable internal fun NotesDisguise(preferences: SecurityPreferencesStore, notes: List<StealthNote>, codeword: String?, onOpenGlance: () -> Unit) {
-    var text by remember { mutableStateOf("") }
-    var editingId by remember { mutableStateOf<String?>(null) }
+@Composable
+internal fun StealthModeSetupScreen(
+    preferences: SecurityPreferencesStore,
+    currentMode: StealthMode,
+    onBack: () -> Unit,
+) {
     val scope = rememberCoroutineScope()
-    Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Notes", style = MaterialTheme.typography.headlineMedium)
-        OutlinedTextField(text, { text = it }, label = { Text("New note") }, modifier = Modifier.fillMaxWidth())
-        Button(onClick = {
-            val value = text.trim()
-            if (codeword != null && notesCodewordMatches(codeword, value)) onOpenGlance()
-            else if (value.isNotBlank()) {
-                val now = System.currentTimeMillis()
-                scope.launch { preferences.update { current ->
-                    val replaced = editingId?.let { id -> current.stealthNotes.map { note -> if (note.id == id) note.copy(body = value, updatedAtMillis = now) else note } }
-                    val updated = replaced ?: (current.stealthNotes + StealthNote(UUID.randomUUID().toString(), value, now, now))
-                    current.copy(stealthNotes = updated)
-                } }
-                text = ""
-                editingId = null
+    Scaffold(containerColor = GlanceBackground, topBar = { BackBar("Stealth mode", onBack) }) { padding ->
+        Column(
+            Modifier.fillMaxSize().padding(padding).padding(horizontal = HomeScreenGutter, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("Disguises Glance as another app. Choose how to unlock it.", color = GlanceMuted, style = MaterialTheme.typography.bodyMedium)
+            stealthModeOptions().forEach { mode ->
+                StealthModeChoiceCard(mode, selected = currentMode == mode) {
+                    scope.launch {
+                        preferences.update { it.copy(stealthMode = mode) }
+                        onBack()
+                    }
+                }
             }
-        }) { Text("Save") }
-        LazyColumn { items(notes, key = { it.id }) { note ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(note.body, Modifier.clickable { text = note.body; editingId = note.id }, style = MaterialTheme.typography.bodyLarge)
-                Button(onClick = { scope.launch { preferences.update { it.copy(stealthNotes = it.stealthNotes.filterNot { saved -> saved.id == note.id }) } } }) { Text("Delete") }
-            }
-        } }
+        }
     }
 }
 
-@Composable internal fun StealthModeDialog(
-    context: Context,
-    preferences: SecurityPreferencesStore,
-    currentMode: StealthMode,
-    currentCodeword: String?,
-    onDismiss: () -> Unit,
-) {
-    var selected by remember { mutableStateOf(currentMode) }
-    var codeword by remember { mutableStateOf(currentCodeword.orEmpty()) }
-    var confirmation by remember { mutableStateOf(currentCodeword.orEmpty()) }
-    var error by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Stealth mode") },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Choose the only launcher identity shown on this device.")
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(StealthMode.OFF to "Glance", StealthMode.CALCULATOR to "Calculator", StealthMode.NOTES to "Notes").forEach { (mode, label) -> Button(onClick = { selected = mode }) { Text(if (selected == mode) "✓ $label" else label) } }
+@Composable
+private fun StealthModeChoiceCard(mode: StealthMode, selected: Boolean, onClick: () -> Unit) {
+    val title = if (mode == StealthMode.OFF) "Off" else "Calculator"
+    val description = if (mode == StealthMode.CALCULATOR) "A working calculator. Unlock with 5 × =." else null
+    Surface(
+        color = GlanceSurface,
+        shape = GlanceCardShape,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)
+            .then(if (selected) Modifier.border(1.dp, GlanceMandarin, GlanceCardShape) else Modifier)
+            .semantics {
+                role = Role.RadioButton
+                this.selected = selected
+                contentDescription = "$title${if (selected) ", selected" else ""}"
             }
-            if (selected == StealthMode.NOTES) {
-                OutlinedTextField(codeword, { codeword = it }, label = { Text("Unlock codeword") }, singleLine = true)
-                OutlinedTextField(confirmation, { confirmation = it }, label = { Text("Confirm codeword") }, singleLine = true)
+            .clickable(onClick = onClick),
+    ) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, color = GlanceText, style = MaterialTheme.typography.titleMedium)
+                description?.let { Text(it, color = GlanceMuted, style = MaterialTheme.typography.bodySmall) }
             }
-            error?.let { Text(it, color = GlanceWarning) }
-        } },
-        confirmButton = { Button(onClick = {
-            val normalized = codeword.trim()
-            if (selected == StealthMode.NOTES && (!isValidNotesCodeword(normalized) || normalized != confirmation)) {
-                error = "Use the same 4–64 character codeword twice."
-            } else scope.launch {
-                preferences.update { it.copy(stealthMode = selected, notesCodeword = if (selected == StealthMode.NOTES) normalized else it.notesCodeword) }
-                applyLauncherIdentity(context, selected)
-                onDismiss()
-            }
-        }) { Text("Save") } },
-        dismissButton = { Button(onClick = onDismiss) { Text("Cancel") } },
-    )
+            if (selected) Text("✓", color = GlanceMandarin, style = MaterialTheme.typography.titleMedium)
+        }
+    }
 }

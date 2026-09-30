@@ -200,6 +200,7 @@ internal fun SettingsScreen(
     authentication: AuthenticationCoordinator,
     tor: TorController,
     onBack: () -> Unit,
+    onStealth: () -> Unit,
     onSupport: () -> Unit,
 ) = Phase7SettingsContent(
     settings = settings,
@@ -208,6 +209,7 @@ internal fun SettingsScreen(
     tor = tor,
     biometricAvailable = BiometricUnlocker(BiometricManager.from(LocalContext.current)).isAvailable(),
     onBack = onBack,
+    onStealth = onStealth,
     onSupport = onSupport,
 )
 
@@ -220,6 +222,7 @@ internal fun Phase7SettingsContent(
     tor: TorController,
     biometricAvailable: Boolean,
     onBack: () -> Unit,
+    onStealth: () -> Unit,
     onSupport: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -229,7 +232,6 @@ internal fun Phase7SettingsContent(
     var currencyExpanded by remember { mutableStateOf(false) }
     var explorerExpanded by remember { mutableStateOf(false) }
     var duressExpanded by remember { mutableStateOf(false) }
-    var stealthConfiguration by remember { mutableStateOf(false) }
 
     Scaffold(containerColor = GlanceBackground, topBar = { BackBar("Settings", onBack) }) { padding ->
         LazyColumn(
@@ -267,7 +269,7 @@ internal fun Phase7SettingsContent(
             item { SettingsGroup("App behavior", "settings_group_app_behavior") {
                 P7SettingSwitch("Screenshot block", settings.screenshotBlocking) { scope.launch { preferences.update { it.copy(screenshotBlocking = !it.screenshotBlocking) } } }
                 SettingsDivider()
-                SettingsDisclosureRow("Stealth mode", value = when (settings.stealthMode) { StealthMode.OFF -> "Off"; StealthMode.CALCULATOR -> "Calculator"; StealthMode.NOTES -> "Notes" }) { stealthConfiguration = true }
+                SettingsDisclosureRow("Stealth mode", value = if (settings.stealthMode == StealthMode.CALCULATOR) "Calculator" else "Off") { onStealth() }
                 SettingsDivider()
                 SettingsDisclosureRow("Duress PIN", value = if (settings.credentials?.duressPinVerifier == null) "Not set" else "Configured") { duressExpanded = !duressExpanded }
                 if (duressExpanded) SettingsDivider()
@@ -293,7 +295,6 @@ internal fun Phase7SettingsContent(
         authentication.configureDuress(pin)
         setupDuress = false
     }
-    if (stealthConfiguration) StealthModeDialog(LocalContext.current, preferences, settings.stealthMode, settings.notesCodeword) { stealthConfiguration = false }
 }
 
 @Composable

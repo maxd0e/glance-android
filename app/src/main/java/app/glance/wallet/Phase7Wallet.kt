@@ -131,7 +131,7 @@ import java.text.DateFormat
 import kotlin.math.roundToInt
 
 
-internal object Routes { const val HOME = "home"; const val ADD = "add"; const val SETTINGS = "settings"; const val SUPPORT = "support"; const val DETAIL = "detail/{id}"; const val GROUP_DETAIL = "group-detail/{id}"; const val GROUP_SETTINGS = "group-settings/{id}"; const val GROUP_TRANSACTION = "group-transaction/{groupId}/{txid}"; const val RECEIVE = "receive/{id}"; const val WALLET_SETTINGS = "wallet-settings/{id}"; const val TRANSACTION = "transaction/{keyId}/{txid}" }
+internal object Routes { const val HOME = "home"; const val ADD = "add"; const val SETTINGS = "settings"; const val STEALTH = "stealth"; const val SUPPORT = "support"; const val DETAIL = "detail/{id}"; const val GROUP_DETAIL = "group-detail/{id}"; const val GROUP_SETTINGS = "group-settings/{id}"; const val GROUP_TRANSACTION = "group-transaction/{groupId}/{txid}"; const val RECEIVE = "receive/{id}"; const val WALLET_SETTINGS = "wallet-settings/{id}"; const val TRANSACTION = "transaction/{keyId}/{txid}" }
 
 /** Prevent rapid taps on an outgoing back arrow from removing the Home root destination. */
 internal fun canPopPhase7BackStack(hasPreviousDestination: Boolean): Boolean = hasPreviousDestination
@@ -354,7 +354,8 @@ internal fun Phase7Wallet(
                 onBack = { nav.popPhase7BackStackSafely() },
             )
         }
-        composable(Routes.SETTINGS) { SettingsScreen(settings, preferences, authentication, torController, onBack = { nav.popPhase7BackStackSafely() }, onSupport = { nav.navigate(Routes.SUPPORT) }) }
+        composable(Routes.SETTINGS) { SettingsScreen(settings, preferences, authentication, torController, onBack = { nav.popPhase7BackStackSafely() }, onStealth = { nav.navigate(Routes.STEALTH) }, onSupport = { nav.navigate(Routes.SUPPORT) }) }
+        composable(Routes.STEALTH) { StealthModeSetupScreen(preferences, settings.stealthMode, onBack = { nav.popPhase7BackStackSafely() }) }
         composable(Routes.SUPPORT) { SupportScreen(onBack = { nav.popPhase7BackStackSafely() }) }
         composable(Routes.DETAIL, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
             val keyId = requireNotNull(entry.arguments?.getString("id"))

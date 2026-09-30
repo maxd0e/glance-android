@@ -177,6 +177,7 @@ class WalletContentTest {
                     tor = TorController(context),
                     biometricAvailable = false,
                     onBack = {},
+                    onStealth = {},
                     onSupport = {},
                 )
             }
@@ -221,6 +222,7 @@ class WalletContentTest {
                     tor = TorController(context),
                     biometricAvailable = false,
                     onBack = {},
+                    onStealth = {},
                     onSupport = {},
                 )
             }
@@ -242,6 +244,7 @@ class WalletContentTest {
                     tor = TorController(context),
                     biometricAvailable = false,
                     onBack = {},
+                    onStealth = {},
                     onSupport = {},
                 )
             }
@@ -258,6 +261,27 @@ class WalletContentTest {
         composeRule.onNodeWithTag("phase7_settings_scroll")
             .performScrollToNode(hasText("Set up duress profile"))
         composeRule.onNodeWithText("Set up duress profile").assertIsDisplayed()
+    }
+
+    @Test
+    fun stealthSetupUsesCalculatorOnlyChoiceCardsAndPersistsSelection() {
+        var returnedToSettings = false
+        composeRule.setContent {
+            GlanceTheme {
+                StealthModeSetupScreen(preferences, SecurityPreferences().stealthMode) {
+                    returnedToSettings = true
+                }
+            }
+        }
+
+        composeRule.onNodeWithText("Off").assertIsDisplayed()
+        composeRule.onNodeWithText("Calculator").assertIsDisplayed()
+        composeRule.onNodeWithText("Notes").assertDoesNotExist()
+        composeRule.onNodeWithText("Calculator").performClick()
+        composeRule.waitUntil(5_000) {
+            runBlocking { preferences.data.first().stealthMode == app.glance.wallet.core.security.StealthMode.CALCULATOR }
+        }
+        assertTrue(returnedToSettings)
     }
 
     @Test

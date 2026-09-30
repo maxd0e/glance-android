@@ -62,11 +62,11 @@ class Phase8StealthTest {
         assertFalse(calculatorUnlockTriggered(interrupted, CalculatorAction.Calculate))
     }
 
-    @Test fun `notes codeword is exact and valid`() {
-        assertTrue(isValidNotesCodeword("Night Note"))
-        assertFalse(isValidNotesCodeword("abc"))
-        assertTrue(notesCodewordMatches("Night Note", "Night Note"))
-        assertFalse(notesCodewordMatches("Night Note", "night note"))
+    @Test fun `stealth setup offers only off and calculator`() {
+        assertEquals(
+            listOf(StealthMode.OFF, StealthMode.CALCULATOR),
+            stealthModeOptions(),
+        )
     }
 
     @Test fun `shake requires two peaks inside window and observes cooldown`() {

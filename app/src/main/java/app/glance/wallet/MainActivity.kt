@@ -101,7 +101,6 @@ class MainActivity : FragmentActivity() {
             GlanceTheme { Surface(Modifier.fillMaxSize(), color = GlanceBackground) {
                 val loadedSettings = settings
                 if (!stealthGate.isGlanceOpen && launchMode == StealthMode.CALCULATOR) CalculatorDisguise(stealthGate::openGlance)
-                else if (!stealthGate.isGlanceOpen && launchMode == StealthMode.NOTES && loadedSettings != null) NotesDisguise(preferences, loadedSettings.stealthNotes, loadedSettings.notesCodeword, stealthGate::openGlance)
                 else if (loadedSettings == null) Box(Modifier.fillMaxSize())
                 else if (torGate(loadedSettings.torEnabled, torState, loadedSettings.offlineMode, initialTorBootstrap) == TorGate.PENDING) TorBootstrapScreen()
                 else GlanceApp(authState, loadedSettings, authentication, preferences, torController, ::requestBiometricUnlock)
@@ -111,7 +110,6 @@ class MainActivity : FragmentActivity() {
 
     private fun launchStealthMode(): StealthMode = when {
         intent.component?.className?.endsWith("CalculatorLauncherAlias") == true -> StealthMode.CALCULATOR
-        intent.component?.className?.endsWith("NotesLauncherAlias") == true -> StealthMode.NOTES
         else -> StealthMode.OFF
     }
 
