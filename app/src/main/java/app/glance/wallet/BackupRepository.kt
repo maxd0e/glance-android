@@ -17,7 +17,6 @@ import app.glance.wallet.core.security.ExplorerPreset
 import app.glance.wallet.core.security.FIAT_CURRENCIES
 import app.glance.wallet.core.security.SecurityPreferences
 import app.glance.wallet.core.security.SecurityPreferencesStore
-import app.glance.wallet.core.security.StealthMode
 import app.glance.wallet.core.security.UtxoView
 import kotlinx.coroutines.flow.first
 
@@ -34,8 +33,9 @@ internal class BackupRepository(private val database: GlanceDatabase, private va
         settings = preferences.data.first().toBackupSettings(),
     )
 
-    suspend fun restore(snapshot: BackupSnapshot) {
+    suspend fun restore(snapshot: BackupSnapshot, directConnectionConfirmed: Boolean = false) {
         validate(snapshot)
+        if (!snapshot.settings.torEnabled && !directConnectionConfirmed) throw BackupRestoreException()
         database.withTransaction {
             if (database.watchedKeyDao().observeAll().first().isNotEmpty() || database.walletGroupDao().all().isNotEmpty() || database.labelDao().all().isNotEmpty() || database.serverConfigDao().all().isNotEmpty()) throw BackupRestoreException()
             val now = System.currentTimeMillis()
@@ -65,11 +65,11 @@ internal class BackupRepository(private val database: GlanceDatabase, private va
         snapshot.labels.forEach { if (it.text.length > 500 || it.referenceId.isBlank()) throw BackupRestoreException(); LabelReferenceType.valueOf(it.referenceType) }
         snapshot.serverConfigs.forEach { if (it.host.isBlank() || it.port !in 1..65535 || it.protocol.lowercase() !in setOf("electrum", "esplora")) throw BackupRestoreException() }
         val settings = snapshot.settings
-        if (settings.fiatCurrency !in FIAT_CURRENCIES || runCatching { UtxoView.valueOf(settings.utxoView); ExplorerPreset.valueOf(settings.explorerPreset); StealthMode.valueOf(settings.stealthMode) }.isFailure) throw BackupRestoreException()
+        if (settings.fiatCurrency !in FIAT_CURRENCIES || runCatching { UtxoView.valueOf(settings.utxoView); ExplorerPreset.valueOf(settings.explorerPreset) }.isFailure) throw BackupRestoreException()
     }
 }
 
-private fun SecurityPreferences.toBackupSettings() = BackupSettings(showBalanceChart, utxoView.name, fiatCurrency, explorerPreset.name, torEnabled, offlineMode, stealthMode.name, streetModeEnabled)
+private fun SecurityPreferences.toBackupSettings() = BackupSettings(showBalanceChart, utxoView.name, fiatCurrency, explorerPreset.name, torEnabled, offlineMode, streetModeEnabled)
 private fun SecurityPreferences.withBackupSettings(settings: BackupSettings) = copy(
     showBalanceChart = settings.showBalanceChart,
     utxoView = UtxoView.valueOf(settings.utxoView),
@@ -77,6 +77,5 @@ private fun SecurityPreferences.withBackupSettings(settings: BackupSettings) = c
     explorerPreset = ExplorerPreset.valueOf(settings.explorerPreset),
     torEnabled = settings.torEnabled,
     offlineMode = settings.offlineMode,
-    stealthMode = StealthMode.valueOf(settings.stealthMode),
     streetModeEnabled = settings.streetModeEnabled,
 )

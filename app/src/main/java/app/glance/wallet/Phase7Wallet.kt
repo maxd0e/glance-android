@@ -354,7 +354,7 @@ internal fun Phase7Wallet(
                 onBack = { nav.popPhase7BackStackSafely() },
             )
         }
-        composable(Routes.SETTINGS) { SettingsScreen(settings, preferences, authentication, torController, remember(session.database) { BackupRepository(session.database, preferences) }, onBack = { nav.popPhase7BackStackSafely() }, onStealth = { nav.navigate(Routes.STEALTH) }, onSupport = { nav.navigate(Routes.SUPPORT) }) }
+        composable(Routes.SETTINGS) { SettingsScreen(settings, preferences, authentication, torController, remember(session.database) { BackupRepository(session.database, preferences) }, onBackupImported = { restored -> syncCoordinator.requestSync(restored.torEnabled, torState, restored.offlineMode) }, onBack = { nav.popPhase7BackStackSafely() }, onStealth = { nav.navigate(Routes.STEALTH) }, onSupport = { nav.navigate(Routes.SUPPORT) }) }
         composable(Routes.STEALTH) { StealthModeSetupScreen(preferences, settings.stealthMode, onBack = { nav.popPhase7BackStackSafely() }) }
         composable(Routes.SUPPORT) { SupportScreen(onBack = { nav.popPhase7BackStackSafely() }) }
         composable(Routes.DETAIL, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->

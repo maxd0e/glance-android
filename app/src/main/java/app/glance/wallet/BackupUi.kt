@@ -24,13 +24,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@Composable internal fun BackupSettingsActions(repository: BackupRepository) {
+internal fun requiresDirectConnectionRestoreWarning(snapshot: BackupSnapshot): Boolean = !snapshot.settings.torEnabled
+
+@Composable internal fun BackupSettingsActions(repository: BackupRepository, onImported: suspend (BackupSettings) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var exportPassphrase by remember { mutableStateOf<String?>(null) }
     var importBytes by remember { mutableStateOf<ByteArray?>(null) }
     var importPassphrase by remember { mutableStateOf<String?>(null) }
     var candidate by remember { mutableStateOf<BackupSnapshot?>(null) }
+    var directConnectionConfirmation by remember { mutableStateOf<BackupSnapshot?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     val create = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         val passphrase = exportPassphrase ?: return@rememberLauncherForActivityResult
@@ -50,9 +53,19 @@ import kotlinx.coroutines.withContext
     }
     exportPassphrase?.let { value -> PassphraseDialog("Export backup", value, confirmation = true, onDismiss = { exportPassphrase = null }) { passphrase -> exportPassphrase = passphrase; create.launch("glance-backup-${System.currentTimeMillis()}.glancebackup") } }
     importBytes?.let { bytes -> PassphraseDialog("Import backup", importPassphrase.orEmpty(), onDismiss = { importBytes = null; importPassphrase = null }) { passphrase ->
-        runCatching { BackupCodec.decrypt(bytes, passphrase.toCharArray()) }.onSuccess { candidate = it; importBytes = null }.onFailure { message = "Backup cannot be opened."; importBytes = null }
+        scope.launch {
+            runCatching { withContext(Dispatchers.IO) { BackupCodec.decrypt(bytes, passphrase.toCharArray()) } }
+                .onSuccess { candidate = it; importBytes = null }
+                .onFailure { message = "Backup cannot be opened."; importBytes = null }
+        }
     } }
-    candidate?.let { snapshot -> AlertDialog(onDismissRequest = { candidate = null }, title = { Text("Restore backup?") }, text = { Text("Restore ${snapshot.watchedKeys.size} watched target(s), ${snapshot.labels.size} label(s), and saved settings. Cached balances and history will sync after you refresh.") }, dismissButton = { Button(onClick = { candidate = null }) { Text("Cancel") } }, confirmButton = { Button(onClick = { scope.launch { runCatching { repository.restore(snapshot) }.onSuccess { message = "Backup imported. Pull to refresh to sync." }.onFailure { message = "Backup cannot be restored." }; candidate = null } }) { Text("Import") } }) }
+    fun restore(snapshot: BackupSnapshot, directConnectionConfirmed: Boolean = false) = scope.launch {
+        runCatching { withContext(Dispatchers.IO) { repository.restore(snapshot, directConnectionConfirmed) } }
+            .onSuccess { onImported(snapshot.settings); message = "Backup imported. Wallet reconciliation started." }
+            .onFailure { message = "Backup cannot be restored." }
+    }
+    candidate?.let { snapshot -> AlertDialog(onDismissRequest = { candidate = null }, title = { Text("Restore backup?") }, text = { Text("Restore ${snapshot.watchedKeys.size} watched target(s), ${snapshot.labels.size} label(s), and saved settings. Cached balances and history will reconcile automatically.") }, dismissButton = { Button(onClick = { candidate = null }) { Text("Cancel") } }, confirmButton = { Button(onClick = { candidate = null; if (requiresDirectConnectionRestoreWarning(snapshot)) directConnectionConfirmation = snapshot else restore(snapshot) }) { Text("Import") } }) }
+    directConnectionConfirmation?.let { snapshot -> AlertDialog(onDismissRequest = { directConnectionConfirmation = null }, title = { Text("Turn off Tor?") }, text = { Text("The querying server will see your device's real IP address. Continue only if you accept this privacy risk.") }, dismissButton = { Button(onClick = { directConnectionConfirmation = null }) { Text("Cancel import") } }, confirmButton = { Button(onClick = { directConnectionConfirmation = null; restore(snapshot, directConnectionConfirmed = true) }) { Text("Turn off Tor") } }) }
     message?.let { text -> AlertDialog(onDismissRequest = { message = null }, confirmButton = { Button(onClick = { message = null }) { Text("OK") } }, title = { Text("Backup") }, text = { Text(text) }) }
 }
 

@@ -48,7 +48,6 @@ internal data class BackupSettings(
     val explorerPreset: String = "MEMPOOL_SPACE",
     val torEnabled: Boolean = true,
     val offlineMode: Boolean = false,
-    val stealthMode: String = "OFF",
     val streetModeEnabled: Boolean = false,
 )
 internal data class BackupSnapshot(
@@ -135,7 +134,7 @@ internal object BackupCodec {
         put("watchedKeys", s.watchedKeys.toJson { k -> obj("id" to k.id, "label" to k.label, "source" to k.keyMaterial, "script" to k.scriptType, "target" to k.targetType, "group" to k.walletGroupId, "utxoView" to k.utxoView, "dust" to k.dustThresholdSats) })
         put("labels", s.labels.toJson { l -> obj("type" to l.referenceType, "id" to l.referenceId, "text" to l.text) })
         put("serverConfigs", s.serverConfigs.toJson { c -> obj("id" to c.id, "protocol" to c.protocol, "host" to c.host, "port" to c.port, "tls" to c.useTls, "custom" to c.isCustom) })
-        put("settings", obj("chart" to s.settings.showBalanceChart, "utxoView" to s.settings.utxoView, "fiat" to s.settings.fiatCurrency, "explorer" to s.settings.explorerPreset, "tor" to s.settings.torEnabled, "offline" to s.settings.offlineMode, "stealth" to s.settings.stealthMode, "street" to s.settings.streetModeEnabled))
+        put("settings", obj("chart" to s.settings.showBalanceChart, "utxoView" to s.settings.utxoView, "fiat" to s.settings.fiatCurrency, "explorer" to s.settings.explorerPreset, "tor" to s.settings.torEnabled, "offline" to s.settings.offlineMode, "street" to s.settings.streetModeEnabled))
     })
     private fun <T> List<T>.toJson(transform: (T) -> JsonObject) = buildJsonArray { forEach { add(transform(it)) } }
     private fun obj(vararg fields: Pair<String, Any?>) = buildJsonObject { fields.forEach { (k, v) -> when (v) { null -> put(k, JsonPrimitive("")); is String -> put(k, v); is Boolean -> put(k, v); is Int -> put(k, v); is Long -> put(k, v) } } }
@@ -148,7 +147,9 @@ internal object BackupCodec {
             watchedKeys = array("watchedKeys").map { it.jsonObject.let { k -> BackupWatchedKey(k.required("id"), k.required("label"), k.required("source"), k.required("script"), k.required("target"), k.string("group")?.ifBlank { null }, k.required("utxoView"), k.required("dust").toLong()) } },
             labels = array("labels").map { it.jsonObject.let { l -> BackupLabel(l.required("type"), l.required("id"), l.required("text")) } },
             serverConfigs = array("serverConfigs").map { it.jsonObject.let { c -> BackupServerConfig(c.required("id"), c.required("protocol"), c.required("host"), c.required("port").toInt(), c.required("tls").toBooleanStrict(), c.required("custom").toBooleanStrict()) } },
-            settings = root["settings"]!!.jsonObject.let { p -> BackupSettings(p.required("chart").toBooleanStrict(), p.required("utxoView"), p.required("fiat"), p.required("explorer"), p.required("tor").toBooleanStrict(), p.required("offline").toBooleanStrict(), p.required("stealth"), p.required("street").toBooleanStrict()) },
+            // Legacy backups may contain a stealth field. It is deliberately ignored: launcher
+            // identity is a separately reviewed security setting and never crosses backups.
+            settings = root["settings"]!!.jsonObject.let { p -> BackupSettings(p.required("chart").toBooleanStrict(), p.required("utxoView"), p.required("fiat"), p.required("explorer"), p.required("tor").toBooleanStrict(), p.required("offline").toBooleanStrict(), p.required("street").toBooleanStrict()) },
         )
     }
 }

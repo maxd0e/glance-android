@@ -30,6 +30,15 @@ class BackupCodecTest {
         expectInvalid { BackupCodec.decrypt("{}".encodeToByteArray(), "x".toCharArray()) }
     }
 
+    @Test fun `backup settings have no stealth mode field`() {
+        assertEquals(false, BackupSettings::class.java.declaredFields.any { it.name == "stealthMode" })
+    }
+
+    @Test fun `Tor-off restore requires the explicit direct-connection warning`() {
+        assertEquals(true, requiresDirectConnectionRestoreWarning(BackupSnapshot(settings = BackupSettings(torEnabled = false))))
+        assertEquals(false, requiresDirectConnectionRestoreWarning(BackupSnapshot(settings = BackupSettings(torEnabled = true))))
+    }
+
     private fun expectInvalid(block: () -> Unit) {
         try { block(); throw AssertionError("expected invalid backup") } catch (_: InvalidBackupException) { }
     }
