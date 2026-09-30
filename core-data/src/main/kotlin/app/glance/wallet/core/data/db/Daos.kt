@@ -97,6 +97,9 @@ interface WalletGroupDao {
     @Query("SELECT * FROM wallet_groups ORDER BY dateAdded")
     fun observeAll(): Flow<List<WalletGroupEntity>>
 
+    @Query("SELECT * FROM wallet_groups ORDER BY dateAdded")
+    suspend fun all(): List<WalletGroupEntity>
+
     @Query("SELECT * FROM wallet_groups WHERE id = :id")
     fun observeById(id: String): Flow<WalletGroupEntity?>
 
@@ -268,6 +271,9 @@ interface LabelDao {
     @Query("SELECT * FROM labels WHERE referenceType = :referenceType AND referenceId = :referenceId")
     suspend fun find(referenceType: LabelReferenceType, referenceId: String): LabelEntity?
 
+    @Query("SELECT * FROM labels ORDER BY referenceType, referenceId")
+    suspend fun all(): List<LabelEntity>
+
     @Query("DELETE FROM labels WHERE referenceType = :referenceType AND referenceId = :referenceId")
     suspend fun delete(referenceType: LabelReferenceType, referenceId: String)
 }
@@ -279,6 +285,9 @@ interface ServerConfigDao {
 
     @Query("SELECT * FROM server_configs ORDER BY isCustom, host")
     fun observeAll(): Flow<List<ServerConfigEntity>>
+
+    @Query("SELECT * FROM server_configs ORDER BY isCustom, host")
+    suspend fun all(): List<ServerConfigEntity>
 }
 
 @Dao

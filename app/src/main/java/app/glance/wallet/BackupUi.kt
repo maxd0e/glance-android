@@ -1,0 +1,62 @@
+package app.glance.wallet
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+@Composable internal fun BackupSettingsActions(repository: BackupRepository) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var exportPassphrase by remember { mutableStateOf<String?>(null) }
+    var importBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var importPassphrase by remember { mutableStateOf<String?>(null) }
+    var candidate by remember { mutableStateOf<BackupSnapshot?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
+    val create = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val passphrase = exportPassphrase ?: return@rememberLauncherForActivityResult
+        exportPassphrase = null
+        if (uri != null) scope.launch {
+            runCatching { withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.use { it.write(BackupCodec.encrypt(repository.snapshot(), passphrase.toCharArray())) } ?: error("write") } }
+                .onSuccess { message = "Backup exported." }.onFailure { message = "Backup export failed. Try again." }
+        }
+    }
+    val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch { importBytes = runCatching { withContext(Dispatchers.IO) { context.contentResolver.openInputStream(uri)?.readBytes() } }.getOrNull() ?: run { message = "Backup could not be read."; null } }
+    }
+    SettingsGroup("Backup", "settings_group_backup") {
+        SettingsDisclosureRow("Export encrypted backup", modifier = Modifier.testTag("backup_export")) { exportPassphrase = "" }
+        SettingsDivider()
+        SettingsDisclosureRow("Import encrypted backup", modifier = Modifier.testTag("backup_import")) { scope.launch { if (repository.canRestore()) open.launch(arrayOf("application/octet-stream", "application/json", "*/*")) else message = "Import is available only before adding watched data." } }
+    }
+    exportPassphrase?.let { value -> PassphraseDialog("Export backup", value, confirmation = true, onDismiss = { exportPassphrase = null }) { passphrase -> exportPassphrase = passphrase; create.launch("glance-backup-${System.currentTimeMillis()}.glancebackup") } }
+    importBytes?.let { bytes -> PassphraseDialog("Import backup", importPassphrase.orEmpty(), onDismiss = { importBytes = null; importPassphrase = null }) { passphrase ->
+        runCatching { BackupCodec.decrypt(bytes, passphrase.toCharArray()) }.onSuccess { candidate = it; importBytes = null }.onFailure { message = "Backup cannot be opened."; importBytes = null }
+    } }
+    candidate?.let { snapshot -> AlertDialog(onDismissRequest = { candidate = null }, title = { Text("Restore backup?") }, text = { Text("Restore ${snapshot.watchedKeys.size} watched target(s), ${snapshot.labels.size} label(s), and saved settings. Cached balances and history will sync after you refresh.") }, dismissButton = { Button(onClick = { candidate = null }) { Text("Cancel") } }, confirmButton = { Button(onClick = { scope.launch { runCatching { repository.restore(snapshot) }.onSuccess { message = "Backup imported. Pull to refresh to sync." }.onFailure { message = "Backup cannot be restored." }; candidate = null } }) { Text("Import") } }) }
+    message?.let { text -> AlertDialog(onDismissRequest = { message = null }, confirmButton = { Button(onClick = { message = null }) { Text("OK") } }, title = { Text("Backup") }, text = { Text(text) }) }
+}
+
+@Composable private fun PassphraseDialog(title: String, initial: String, confirmation: Boolean = false, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var passphrase by remember { mutableStateOf(initial) }; var confirm by remember { mutableStateOf("") }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = { Column { Text("This passphrase cannot be recovered."); OutlinedTextField(passphrase, { passphrase = it }, label = { Text("Passphrase") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)); if (confirmation) OutlinedTextField(confirm, { confirm = it }, label = { Text("Confirm passphrase") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth()) } }, dismissButton = { Button(onClick = onDismiss) { Text("Cancel") } }, confirmButton = { Button(enabled = passphrase.isNotEmpty() && (!confirmation || passphrase == confirm), onClick = { onConfirm(passphrase) }) { Text(if (confirmation) "Export" else "Continue") } })
+}

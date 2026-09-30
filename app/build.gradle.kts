@@ -192,6 +192,7 @@ dependencies {
     implementation(libs.kmp.tor.resource.exec)
     implementation(libs.kmp.tor.resource.compilation)
     implementation(libs.acinq.secp256k1.jni.android)
+    implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)
     testImplementation(libs.acinq.bitcoin.kmp)
