@@ -7,14 +7,17 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -31,6 +34,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import app.glance.wallet.core.security.SecurityPreferencesStore
 import app.glance.wallet.core.security.StealthMode
@@ -39,7 +49,6 @@ import java.util.UUID
 import kotlinx.coroutines.launch
 import kotlin.math.sqrt
 
-internal fun calculatorUnlockTriggered(tokens: List<String>): Boolean = tokens.takeLast(3) == listOf("5", "×", "=")
 internal fun isValidNotesCodeword(value: String): Boolean = value.length in 4..64
 internal fun notesCodewordMatches(codeword: String, candidate: String): Boolean = codeword == candidate
 internal fun streetMaskedSats(): String = "•••• sats"
@@ -116,35 +125,169 @@ internal fun applyLauncherIdentity(context: Context, mode: StealthMode) {
     }
 }
 
-@Composable internal fun CalculatorDisguise(onOpenGlance: () -> Unit) {
-    var expression by remember { mutableStateOf("") }
-    var display by remember { mutableStateOf("0") }
-    fun press(token: String) {
-        expression = if (token == "C") "" else expression + token
-        if (token == "=") {
-            if (calculatorUnlockTriggered(expression.dropLast(1).chunkedTokens() + "=")) { onOpenGlance(); return }
-            display = simpleCalculation(expression.dropLast(1)) ?: "Error"
-            expression = ""
-        } else display = if (expression.isBlank()) "0" else expression
+internal enum class CalculatorOperation(val symbol: String) {
+    ADD("+"),
+    SUBTRACT("-"),
+    MULTIPLY("x"),
+    DIVIDE("/"),
+}
+
+internal sealed interface CalculatorAction {
+    data class Digit(val value: Int) : CalculatorAction
+    data class Operation(val value: CalculatorOperation) : CalculatorAction
+    data object Decimal : CalculatorAction
+    data object Delete : CalculatorAction
+    data object Clear : CalculatorAction
+    data object Calculate : CalculatorAction
+}
+
+internal data class CalculatorState(
+    val number1: String = "",
+    val operation: CalculatorOperation? = null,
+    val number2: String = "",
+    val result: String? = null,
+    val consecutiveEqualsTaps: Int = 0,
+) {
+    val display: String get() = result ?: (number1 + (operation?.symbol.orEmpty()) + number2).ifBlank { "0" }
+
+    fun reduce(action: CalculatorAction): CalculatorState = when (action) {
+        is CalculatorAction.Digit -> enterDigit(action.value).resetEqualsTapCount()
+        is CalculatorAction.Operation -> enterOperation(action.value).resetEqualsTapCount()
+        CalculatorAction.Decimal -> enterDecimal().resetEqualsTapCount()
+        CalculatorAction.Delete -> delete().resetEqualsTapCount()
+        CalculatorAction.Clear -> CalculatorState()
+        CalculatorAction.Calculate -> calculate().copy(consecutiveEqualsTaps = consecutiveEqualsTaps + 1)
     }
-    Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(display, style = MaterialTheme.typography.displayMedium)
-        listOf(listOf("C", "÷", "×", "−"), listOf("7", "8", "9", "+"), listOf("4", "5", "6", "+"), listOf("1", "2", "3", "="), listOf("0", ".")).forEach { row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) { row.forEach { token -> Button(onClick = { press(token) }, modifier = Modifier.widthIn(min = 64.dp)) { Text(token) } } }
+
+    private fun resetEqualsTapCount(): CalculatorState = copy(consecutiveEqualsTaps = 0)
+
+    private fun enterDigit(digit: Int): CalculatorState {
+        require(digit in 0..9)
+        val base = if (result != null) CalculatorState() else this
+        return if (base.operation == null) {
+            if (base.number1.length >= MAX_OPERAND_LENGTH) base else base.copy(number1 = base.number1 + digit)
+        } else {
+            if (base.number2.length >= MAX_OPERAND_LENGTH) base else base.copy(number2 = base.number2 + digit)
         }
+    }
+
+    private fun enterOperation(nextOperation: CalculatorOperation): CalculatorState = when {
+        number1.isBlank() -> this
+        number2.isNotBlank() -> calculate().enterOperation(nextOperation)
+        else -> copy(operation = nextOperation, result = null)
+    }
+
+    private fun enterDecimal(): CalculatorState = when {
+        result != null -> this
+        operation == null && number1.isNotBlank() && '.' !in number1 -> copy(number1 = "$number1.")
+        operation != null && number2.isNotBlank() && '.' !in number2 -> copy(number2 = "$number2.")
+        else -> this
+    }
+
+    private fun delete(): CalculatorState = when {
+        result != null -> CalculatorState()
+        number2.isNotBlank() -> copy(number2 = number2.dropLast(1))
+        operation != null -> copy(operation = null)
+        number1.isNotBlank() -> copy(number1 = number1.dropLast(1))
+        else -> this
+    }
+
+    private fun calculate(): CalculatorState {
+        val left = number1.toDoubleOrNull() ?: return this
+        val right = number2.toDoubleOrNull() ?: return this
+        val value = when (operation) {
+            CalculatorOperation.ADD -> left + right
+            CalculatorOperation.SUBTRACT -> left - right
+            CalculatorOperation.MULTIPLY -> left * right
+            CalculatorOperation.DIVIDE -> if (right == 0.0) null else left / right
+            null -> return this
+        }
+        val formatted = value?.takeIf(Double::isFinite)?.let(::formatCalculatorResult) ?: "Error"
+        return copy(number1 = formatted, operation = null, number2 = "", result = formatted)
+    }
+
+    private companion object {
+        const val MAX_OPERAND_LENGTH = 8
     }
 }
 
-private fun String.chunkedTokens(): List<String> = map { if (it == '×') "×" else it.toString() }
-private fun simpleCalculation(input: String): String? = runCatching {
-    val operator = input.firstOrNull { it in "+−×÷" }
-    if (operator == null) return@runCatching input.toDouble().toString()
-    val parts = input.split(operator)
-    require(parts.size == 2)
-    val left = parts[0].toDouble(); val right = parts[1].toDouble()
-    val answer = when (operator) { '+' -> left + right; '−' -> left - right; '×' -> left * right; else -> left / right }
-    if (answer % 1.0 == 0.0) answer.toLong().toString() else answer.toString()
-}.getOrNull()
+private fun formatCalculatorResult(value: Double): String =
+    java.math.BigDecimal.valueOf(value).stripTrailingZeros().toPlainString()
+
+internal fun calculatorUnlockTriggered(state: CalculatorState, action: CalculatorAction): Boolean =
+    action == CalculatorAction.Calculate &&
+        state.consecutiveEqualsTaps == 4
+
+@Composable internal fun CalculatorDisguise(onOpenGlance: () -> Unit) {
+    var state by remember { mutableStateOf(CalculatorState()) }
+    fun press(action: CalculatorAction) {
+        if (calculatorUnlockTriggered(state, action)) {
+            onOpenGlance()
+        } else {
+            state = state.reduce(action)
+        }
+    }
+    Column(
+        modifier = Modifier.fillMaxSize().background(Color.Black).padding(8.dp),
+        verticalArrangement = Arrangement.Bottom,
+    ) {
+        Text(
+            text = state.display,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 30.dp).semantics { contentDescription = "Calculator display ${state.display}" },
+            color = Color.White,
+            fontSize = 80.sp,
+            fontWeight = FontWeight.Light,
+            textAlign = TextAlign.End,
+            maxLines = 2,
+        )
+        CalculatorKeyRow(
+            CalculatorKey("AC", CalculatorAction.Clear, CalculatorUtilityKey, 2f),
+            CalculatorKey("Del", CalculatorAction.Delete, CalculatorUtilityKey),
+            CalculatorKey("/", CalculatorAction.Operation(CalculatorOperation.DIVIDE), CalculatorOperatorKey),
+            onPress = ::press,
+        )
+        CalculatorKeyRow(
+            CalculatorKey("7", CalculatorAction.Digit(7), CalculatorNumberKey), CalculatorKey("8", CalculatorAction.Digit(8), CalculatorNumberKey),
+            CalculatorKey("9", CalculatorAction.Digit(9), CalculatorNumberKey), CalculatorKey("x", CalculatorAction.Operation(CalculatorOperation.MULTIPLY), CalculatorOperatorKey),
+            onPress = ::press,
+        )
+        CalculatorKeyRow(
+            CalculatorKey("4", CalculatorAction.Digit(4), CalculatorNumberKey), CalculatorKey("5", CalculatorAction.Digit(5), CalculatorNumberKey),
+            CalculatorKey("6", CalculatorAction.Digit(6), CalculatorNumberKey), CalculatorKey("-", CalculatorAction.Operation(CalculatorOperation.SUBTRACT), CalculatorOperatorKey),
+            onPress = ::press,
+        )
+        CalculatorKeyRow(
+            CalculatorKey("1", CalculatorAction.Digit(1), CalculatorNumberKey), CalculatorKey("2", CalculatorAction.Digit(2), CalculatorNumberKey),
+            CalculatorKey("3", CalculatorAction.Digit(3), CalculatorNumberKey), CalculatorKey("+", CalculatorAction.Operation(CalculatorOperation.ADD), CalculatorOperatorKey),
+            onPress = ::press,
+        )
+        CalculatorKeyRow(
+            CalculatorKey("0", CalculatorAction.Digit(0), CalculatorNumberKey, 2f), CalculatorKey(".", CalculatorAction.Decimal, CalculatorNumberKey),
+            CalculatorKey("=", CalculatorAction.Calculate, CalculatorOperatorKey),
+            onPress = ::press,
+        )
+    }
+}
+
+private data class CalculatorKey(val label: String, val action: CalculatorAction, val color: Color, val span: Float = 1f)
+
+private val CalculatorNumberKey = Color.DarkGray
+private val CalculatorUtilityKey = Color(0xFF818181)
+private val CalculatorOperatorKey = Color(0xFFFF9800)
+
+@Composable private fun CalculatorKeyRow(vararg keys: CalculatorKey, onPress: (CalculatorAction) -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        keys.forEach { key ->
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.weight(key.span).aspectRatio(key.span).clip(CircleShape).background(key.color)
+                    .clickable { onPress(key.action) }.semantics { contentDescription = "Calculator key ${key.label}" },
+            ) {
+                Text(key.label, color = Color.White, fontSize = 36.sp)
+            }
+        }
+    }
+}
 
 @Composable internal fun NotesDisguise(preferences: SecurityPreferencesStore, notes: List<StealthNote>, codeword: String?, onOpenGlance: () -> Unit) {
     var text by remember { mutableStateOf("") }
