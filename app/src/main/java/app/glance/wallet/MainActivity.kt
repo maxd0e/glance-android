@@ -9,6 +9,8 @@ import android.content.Intent
 import android.view.HapticFeedbackConstants
 import android.view.WindowManager
 import androidx.activity.compose.LocalActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
@@ -36,10 +38,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.ViewModelProvider
 import app.glance.wallet.core.security.*
 import java.util.concurrent.Executor
 import java.io.File
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.random.Random
 import kotlinx.coroutines.flow.first
 
@@ -49,6 +54,7 @@ class MainActivity : FragmentActivity() {
     private lateinit var profiles: ProfileDatabaseManager
     private lateinit var authentication: AuthenticationCoordinator
     private lateinit var stealthGate: StealthDisguiseGate
+    private lateinit var pendingBackupImport: PendingBackupImport
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,12 +67,25 @@ class MainActivity : FragmentActivity() {
             torStateCleaner = torController,
             eraseStateStore = FileEraseStateStore(File(applicationContext.noBackupFilesDir, "erase-incomplete.marker")),
         )
+        pendingBackupImport = ViewModelProvider(this)[PendingBackupImport::class.java]
         stealthGate = StealthDisguiseGate(launchStealthMode())
         lifecycleScope.launch { authentication.initialize() }
         setContent {
             val authState by authentication.state.collectAsState()
             val settings by preferences.data.collectAsState<SecurityPreferences, SecurityPreferences?>(initial = null)
             val torState by torController.state.collectAsState()
+            val pendingImportState by pendingBackupImport.state.collectAsState()
+            val openBackupDocument = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                if (uri != null) lifecycleScope.launch {
+                    runCatching {
+                        withContext(Dispatchers.IO) {
+                            contentResolver.openInputStream(uri)?.use(::readBackupDocument)
+                                ?: error("read")
+                        }
+                    }.onSuccess(pendingBackupImport::stage)
+                        .onFailure { pendingBackupImport.markUnreadable() }
+                }
+            }
             var initialTorBootstrap by remember { mutableStateOf(true) }
             LaunchedEffect(settings?.torEnabled, settings?.offlineMode) {
                 val loadedSettings = settings ?: return@LaunchedEffect
@@ -103,7 +122,17 @@ class MainActivity : FragmentActivity() {
                 if (!stealthGate.isGlanceOpen && stealthGate.launchMode == StealthMode.CALCULATOR) CalculatorDisguise(stealthGate::openGlance)
                 else if (loadedSettings == null) Box(Modifier.fillMaxSize())
                 else if (torGate(loadedSettings.torEnabled, torState, loadedSettings.offlineMode, initialTorBootstrap) == TorGate.PENDING) TorBootstrapScreen()
-                else GlanceApp(authState, loadedSettings, authentication, preferences, torController, ::requestBiometricUnlock)
+                else GlanceApp(
+                    authState,
+                    loadedSettings,
+                    authentication,
+                    preferences,
+                    torController,
+                    ::requestBiometricUnlock,
+                    pendingImportState,
+                    onRequestBackupImport = { openBackupDocument.launch(arrayOf("application/octet-stream", "application/json", "*/*")) },
+                    onClearPendingBackupImport = pendingBackupImport::clear,
+                )
             } }
         }
     }
@@ -179,7 +208,7 @@ internal fun TorBootstrapScreen() = Box(
     }
 }
 
-@Composable private fun GlanceApp(state: AuthenticationState, settings: SecurityPreferences, authentication: AuthenticationCoordinator, preferences: SecurityPreferencesStore, torController: TorController, biometricUnlock: () -> Unit) = when (state) {
+@Composable private fun GlanceApp(state: AuthenticationState, settings: SecurityPreferences, authentication: AuthenticationCoordinator, preferences: SecurityPreferencesStore, torController: TorController, biometricUnlock: () -> Unit, pendingBackupImport: PendingBackupImportState, onRequestBackupImport: () -> Unit, onClearPendingBackupImport: () -> Unit) = when (state) {
     AuthenticationState.Initializing -> Box(Modifier.fillMaxSize())
     AuthenticationState.SetupRequired -> PinSetup(authentication)
     AuthenticationState.Locked -> PinUnlock(authentication, settings, biometricUnlock)
@@ -189,7 +218,7 @@ internal fun TorBootstrapScreen() = Box(
     is AuthenticationState.Unlocked -> if (state.session.type == ProfileType.DECOY) {
         DecoyPhase7Wallet(state.session, authentication, torController, settings, preferences)
     } else {
-        Phase7Wallet(state.session, settings, preferences, authentication, torController)
+        Phase7Wallet(state.session, settings, preferences, authentication, torController, pendingBackupImport, onRequestBackupImport, onClearPendingBackupImport)
     }
 }
 

@@ -293,6 +293,9 @@ internal fun Phase7Wallet(
     preferences: SecurityPreferencesStore,
     authentication: AuthenticationCoordinator,
     torController: TorController,
+    pendingBackupImport: PendingBackupImportState,
+    onRequestBackupImport: () -> Unit,
+    onClearPendingBackupImport: () -> Unit,
 ) {
     val nav = rememberNavController()
     val scope = rememberCoroutineScope()
@@ -346,7 +349,7 @@ internal fun Phase7Wallet(
     CompositionLocalProvider(LocalStreetMode provides settings.streetModeEnabled) {
     StreetModeShakeEffect(enabled = true) { scope.launch { preferences.update { it.copy(streetModeEnabled = !it.streetModeEnabled) } } }
     NavHost(nav, startDestination = Routes.HOME) {
-        composable(Routes.HOME) { HomeScreen(session.database, fiatStore, backupRepository, settings.fiatCurrency, settings.torEnabled, settings.offlineMode, torState, torController.readySinceMillis.collectAsState().value, syncState, settings.showBalanceChart, historicalFiatRefreshRequest, refreshHome, onBackupImported = { restored -> syncCoordinator.requestSync(restored.torEnabled, torState, restored.offlineMode) }, onAdd = { nav.navigate(Routes.ADD) }, onSettings = { nav.navigate(Routes.SETTINGS) }, onSupport = { nav.navigate(Routes.SUPPORT) }, onKey = { nav.navigate("detail/$it") }, onGroup = { nav.navigate("group-detail/$it") }, onTorEnabled = { enabled -> scope.launch { preferences.update { it.copy(torEnabled = enabled) } } }, onOfflineMode = { enabled -> scope.launch { preferences.update { it.copy(offlineMode = enabled) } } }, onRenewTor = app::renewTorConnection, onLoadMoreHistory = { keyIds -> if (settings.offlineMode || (settings.torEnabled && torState !is TorState.Ready)) false else app.networkClients.syncEngine(RoomWalletSyncStore(session.database)).loadMoreSingleAddressHistories(keyIds) }) }
+        composable(Routes.HOME) { HomeScreen(session.database, fiatStore, backupRepository, settings.fiatCurrency, settings.torEnabled, settings.offlineMode, torState, torController.readySinceMillis.collectAsState().value, syncState, settings.showBalanceChart, historicalFiatRefreshRequest, refreshHome, onBackupImported = { restored -> syncCoordinator.requestSync(restored.torEnabled, torState, restored.offlineMode) }, pendingBackupImport = pendingBackupImport, onRequestBackupImport = onRequestBackupImport, onClearPendingBackupImport = onClearPendingBackupImport, onAdd = { nav.navigate(Routes.ADD) }, onSettings = { nav.navigate(Routes.SETTINGS) }, onSupport = { nav.navigate(Routes.SUPPORT) }, onKey = { nav.navigate("detail/$it") }, onGroup = { nav.navigate("group-detail/$it") }, onTorEnabled = { enabled -> scope.launch { preferences.update { it.copy(torEnabled = enabled) } } }, onOfflineMode = { enabled -> scope.launch { preferences.update { it.copy(offlineMode = enabled) } } }, onRenewTor = app::renewTorConnection, onLoadMoreHistory = { keyIds -> if (settings.offlineMode || (settings.torEnabled && torState !is TorState.Ready)) false else app.networkClients.syncEngine(RoomWalletSyncStore(session.database)).loadMoreSingleAddressHistories(keyIds) }) }
         composable(Routes.ADD) {
             AddWatchTargetScreen(
                 database = session.database,

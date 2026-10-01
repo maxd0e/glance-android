@@ -10,6 +10,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,9 +60,11 @@ internal fun requiresDirectConnectionRestoreWarning(snapshot: BackupSnapshot): B
 internal fun BackupImportWalletAction(
     repository: BackupRepository,
     onImported: suspend (BackupSettings) -> Unit,
+    pendingImport: PendingBackupImportState,
+    onRequestBackupImport: () -> Unit,
+    onClearPendingImport: () -> Unit,
     trigger: @Composable (onImport: () -> Unit, canImport: Boolean, unavailableMessage: String?) -> Unit,
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val canRestore by androidx.compose.runtime.produceState<Boolean?>(initialValue = null, repository) {
         value = withContext(Dispatchers.IO) { repository.canRestore() }
@@ -71,23 +74,26 @@ internal fun BackupImportWalletAction(
     var candidate by remember { mutableStateOf<BackupSnapshot?>(null) }
     var directConnectionConfirmation by remember { mutableStateOf<BackupSnapshot?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
-    val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) scope.launch {
-            importBytes = runCatching {
-                withContext(Dispatchers.IO) { context.contentResolver.openInputStream(uri)?.readBytes() }
-            }.getOrNull() ?: run { message = "Backup could not be read."; null }
+    LaunchedEffect(pendingImport) {
+        when (pendingImport) {
+            PendingBackupImportState.Idle -> Unit
+            PendingBackupImportState.Unreadable -> {
+                message = "Backup could not be read."
+                onClearPendingImport()
+            }
+            is PendingBackupImportState.Ready -> importBytes = pendingImport.bytes
         }
     }
     trigger(
-        { if (canRestore == true) open.launch(arrayOf("application/octet-stream", "application/json", "*/*")) },
+        { if (canRestore == true) onRequestBackupImport() },
         canRestore == true,
         if (canRestore == false) "Import wallet requires an empty local wallet." else null,
     )
-    importBytes?.let { bytes -> PassphraseDialog("Import backup", importPassphrase.orEmpty(), onDismiss = { importBytes = null; importPassphrase = null }) { passphrase ->
+    importBytes?.let { bytes -> PassphraseDialog("Import backup", importPassphrase.orEmpty(), onDismiss = { importBytes = null; importPassphrase = null; onClearPendingImport() }) { passphrase ->
         scope.launch {
             runCatching { withContext(Dispatchers.IO) { BackupCodec.decrypt(bytes, passphrase.toCharArray()) } }
-                .onSuccess { candidate = it; importBytes = null }
-                .onFailure { message = "Backup cannot be opened."; importBytes = null }
+                .onSuccess { candidate = it; importBytes = null; onClearPendingImport() }
+                .onFailure { message = "Backup cannot be opened."; importBytes = null; onClearPendingImport() }
         }
     } }
     fun restore(snapshot: BackupSnapshot, directConnectionConfirmed: Boolean = false) = scope.launch {
