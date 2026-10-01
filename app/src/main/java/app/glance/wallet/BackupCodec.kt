@@ -21,6 +21,7 @@ internal const val BACKUP_FORMAT_VERSION = 1
 private const val BACKUP_ITERATIONS = 310_000
 private const val SALT_BYTES = 16
 private const val NONCE_BYTES = 12
+private const val BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
 internal data class BackupWalletGroup(
     val id: String,
@@ -121,12 +122,62 @@ internal object BackupCodec {
     }
 
     private fun metadata(salt: ByteArray, nonce: ByteArray, iterations: Int) = "glance-backup|$BACKUP_FORMAT_VERSION|PBKDF2-HMAC-SHA256|$iterations|${salt.base64()}|${nonce.base64()}"
-    private fun ByteArray.base64() = java.util.Base64.getEncoder().encodeToString(this)
+    private fun ByteArray.base64(): String = buildString(((size + 2) / 3) * 4) {
+        var index = 0
+        while (index < this@base64.size) {
+            val first = this@base64[index++].toInt() and 0xff
+            val second = if (index < this@base64.size) this@base64[index++].toInt() and 0xff else -1
+            val third = if (index < this@base64.size) this@base64[index++].toInt() and 0xff else -1
+            append(BASE64_ALPHABET[first ushr 2])
+            append(BASE64_ALPHABET[((first and 0x03) shl 4) or (if (second >= 0) second ushr 4 else 0)])
+            append(if (second >= 0) BASE64_ALPHABET[((second and 0x0f) shl 2) or (if (third >= 0) third ushr 6 else 0)] else '=')
+            append(if (third >= 0) BASE64_ALPHABET[third and 0x3f] else '=')
+        }
+    }
     private fun JsonObject.string(name: String) = this[name]?.jsonPrimitive?.contentOrNull
     private fun JsonObject.int(name: String) = string(name)?.toIntOrNull()
     private fun JsonObject.bytes(name: String, minimum: Int, maximum: Int = minimum): ByteArray? {
         val encoded = string(name) ?: return null
-        return try { java.util.Base64.getDecoder().decode(encoded).takeIf { it.size in minimum..maximum } } catch (_: Exception) { null }
+        return encoded.base64Bytes()?.takeIf { it.size in minimum..maximum }
+    }
+
+    private fun String.base64Bytes(): ByteArray? {
+        if (length % 4 != 0) return null
+        val padding = when {
+            endsWith("==") -> 2
+            endsWith("=") -> 1
+            else -> 0
+        }
+        val result = ByteArray((length / 4) * 3 - padding)
+        var input = 0
+        var output = 0
+        while (input < length) {
+            val first = base64Value(this[input++])
+            val second = base64Value(this[input++])
+            if (first < 0 || second < 0) return null
+            val thirdCharacter = this[input++]
+            val fourthCharacter = this[input++]
+            val isLastBlock = input == length
+            val third = if (thirdCharacter == '=') -1 else base64Value(thirdCharacter)
+            val fourth = if (fourthCharacter == '=') -1 else base64Value(fourthCharacter)
+            if (third < 0 && thirdCharacter != '=' || fourth < 0 && fourthCharacter != '=') return null
+            if (third < 0) {
+                if (!isLastBlock || fourth >= 0 || (second and 0x0f) != 0) return null
+            } else if (fourth < 0 && (!isLastBlock || (third and 0x03) != 0)) return null
+            result[output++] = ((first shl 2) or (second ushr 4)).toByte()
+            if (third >= 0) result[output++] = (((second and 0x0f) shl 4) or (third ushr 2)).toByte()
+            if (fourth >= 0) result[output++] = (((third and 0x03) shl 6) or fourth).toByte()
+        }
+        return result
+    }
+
+    private fun base64Value(character: Char) = when (character) {
+        in 'A'..'Z' -> character - 'A'
+        in 'a'..'z' -> character - 'a' + 26
+        in '0'..'9' -> character - '0' + 52
+        '+' -> 62
+        '/' -> 63
+        else -> -1
     }
 
     private fun encodeSnapshot(s: BackupSnapshot): String = Json.encodeToString(JsonObject.serializer(), buildJsonObject {
