@@ -25,13 +25,17 @@ internal class BackupRestoreException : Exception("Backup cannot be restored")
 /** Maps only explicitly exportable configuration. Security state and sync caches never cross this boundary. */
 internal class BackupRepository(private val database: GlanceDatabase, private val preferences: SecurityPreferencesStore) {
     suspend fun canRestore(): Boolean = database.watchedKeyDao().observeAll().first().isEmpty() && database.walletGroupDao().all().isEmpty() && database.labelDao().all().isEmpty() && database.serverConfigDao().all().isEmpty()
-    suspend fun snapshot(): BackupSnapshot = BackupSnapshot(
-        walletGroups = database.walletGroupDao().all().map { BackupWalletGroup(it.id, it.label, it.utxoView, it.dustThresholdSats, it.preferredReceiveScriptType.name) },
-        watchedKeys = database.watchedKeyDao().observeAll().first().map { BackupWatchedKey(it.id, it.label, it.keyMaterial, it.scriptType.name, it.targetType.name, it.walletGroupId, it.utxoView ?: UtxoView.BUBBLES.name, it.dustThresholdSats) },
-        labels = database.labelDao().all().map { BackupLabel(it.referenceType.name, it.referenceId, it.text) },
-        serverConfigs = database.serverConfigDao().all().map { BackupServerConfig(it.id, it.protocol, it.host, it.port, it.useTls, it.isCustom) },
-        settings = preferences.data.first().toBackupSettings(),
-    )
+    suspend fun snapshot(): BackupSnapshot {
+        val snapshot = database.withTransaction {
+            BackupSnapshot(
+                walletGroups = database.walletGroupDao().all().map { BackupWalletGroup(it.id, it.label, it.utxoView, it.dustThresholdSats, it.preferredReceiveScriptType.name) },
+                watchedKeys = database.watchedKeyDao().all().map { BackupWatchedKey(it.id, it.label, it.keyMaterial, it.scriptType.name, it.targetType.name, it.walletGroupId, it.utxoView ?: UtxoView.BUBBLES.name, it.dustThresholdSats) },
+                labels = database.labelDao().all().map { BackupLabel(it.referenceType.name, it.referenceId, it.text) },
+                serverConfigs = database.serverConfigDao().all().map { BackupServerConfig(it.id, it.protocol, it.host, it.port, it.useTls, it.isCustom) },
+            )
+        }
+        return snapshot.copy(settings = preferences.data.first().toBackupSettings())
+    }
 
     suspend fun restore(snapshot: BackupSnapshot, directConnectionConfirmed: Boolean = false) {
         validate(snapshot)

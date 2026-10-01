@@ -19,6 +19,9 @@ interface WatchedKeyDao {
     @Query("SELECT * FROM watched_keys ORDER BY dateAdded")
     fun observeAll(): Flow<List<WatchedKeyEntity>>
 
+    @Query("SELECT * FROM watched_keys ORDER BY dateAdded")
+    suspend fun all(): List<WatchedKeyEntity>
+
     @Query("SELECT * FROM watched_keys WHERE id = :id")
     suspend fun findById(id: String): WatchedKeyEntity?
 

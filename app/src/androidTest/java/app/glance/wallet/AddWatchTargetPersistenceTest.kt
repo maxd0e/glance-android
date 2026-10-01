@@ -7,6 +7,8 @@ import app.glance.wallet.core.crypto.ScriptType as CryptoScriptType
 import app.glance.wallet.core.crypto.parseWatchedKey
 import app.glance.wallet.core.data.db.GlanceDatabase
 import app.glance.wallet.core.data.db.ScriptType as DataScriptType
+import app.glance.wallet.core.data.db.AddressChain
+import app.glance.wallet.core.security.SecurityPreferencesStore
 import app.glance.wallet.core.security.UtxoView
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -146,7 +148,42 @@ class AddWatchTargetPersistenceTest {
         }
     }
 
+    @Test
+    fun backupRoundTripRetainsASingleWatchedAddress() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val source = Room.inMemoryDatabaseBuilder(context, GlanceDatabase::class.java).allowMainThreadQueries().build()
+        val destination = Room.inMemoryDatabaseBuilder(context, GlanceDatabase::class.java).allowMainThreadQueries().build()
+        val preferences = SecurityPreferencesStore.forTesting(context, "single-address-backup-round-trip")
+        try {
+            persistWatchTarget(source, "Cold storage", SINGLE_ADDRESS, null)
+
+            val encrypted = BackupCodec.encrypt(
+                BackupRepository(source, preferences).snapshot(),
+                "backup passphrase".toCharArray(),
+                DeterministicBackupRandom,
+            )
+            val restoredSnapshot = BackupCodec.decrypt(encrypted, "backup passphrase".toCharArray())
+            assertEquals(1, restoredSnapshot.watchedKeys.size)
+            assertEquals("SINGLE_ADDRESS", restoredSnapshot.watchedKeys.single().targetType)
+
+            BackupRepository(destination, preferences).restore(restoredSnapshot)
+
+            val restoredTarget = destination.watchedKeyDao().observeAll().first().single()
+            assertEquals(SINGLE_ADDRESS, restoredTarget.keyMaterial)
+            assertEquals(DataScriptType.NATIVE_SEGWIT, restoredTarget.scriptType)
+            assertEquals(
+                SINGLE_ADDRESS,
+                destination.derivedAddressDao().find(restoredTarget.id, AddressChain.EXTERNAL, 0)?.address,
+            )
+        } finally {
+            preferences.wipe()
+            source.close()
+            destination.close()
+        }
+    }
+
     private companion object {
         const val XPUB = "xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz"
+        const val SINGLE_ADDRESS = "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu"
     }
 }

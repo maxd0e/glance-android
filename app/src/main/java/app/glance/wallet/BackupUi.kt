@@ -35,8 +35,17 @@ internal fun requiresDirectConnectionRestoreWarning(snapshot: BackupSnapshot): B
         val passphrase = exportPassphrase ?: return@rememberLauncherForActivityResult
         exportPassphrase = null
         if (uri != null) scope.launch {
-            runCatching { withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.use { it.write(BackupCodec.encrypt(repository.snapshot(), passphrase.toCharArray())) } ?: error("write") } }
-                .onSuccess { message = "Backup exported." }.onFailure { message = "Backup export failed. Try again." }
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val snapshot = repository.snapshot()
+                    context.contentResolver.openOutputStream(uri)?.use {
+                        it.write(BackupCodec.encrypt(snapshot, passphrase.toCharArray()))
+                    } ?: error("write")
+                    snapshot.watchedKeys.size
+                }
+            }.onSuccess { targetCount ->
+                message = "Backup exported with $targetCount watched target(s)."
+            }.onFailure { message = "Backup export failed. Try again." }
         }
     }
     SettingsGroup("Backup", "settings_group_backup") {
