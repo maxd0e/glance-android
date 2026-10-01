@@ -36,6 +36,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Set up JDK 17
+        id: java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -45,8 +46,17 @@ jobs:
         uses: android-actions/setup-android@v4
       - name: Install Android build dependencies
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Verify Gradle JVM
+        env:
+          JAVA_HOME: ${{ steps.java.outputs.path }}
+        run: |
+          java -version
+          gradleVersion="$(./gradlew --no-daemon -Dorg.gradle.java.home="$JAVA_HOME" --version)"
+          printf '%s\n' "$gradleVersion"
+          grep -q 'JVM:.*17\.' <<< "$gradleVersion"
       - name: Build, verify, and sign release APK
         env:
+          JAVA_HOME: ${{ steps.java.outputs.path }}
           GLANCE_RELEASE_KEYSTORE_BASE64: ${{ secrets.GLANCE_RELEASE_KEYSTORE_BASE64 }}
           GLANCE_RELEASE_STORE_PASSWORD: ${{ secrets.GLANCE_RELEASE_STORE_PASSWORD }}
           GLANCE_RELEASE_KEY_ALIAS: ${{ secrets.GLANCE_RELEASE_KEY_ALIAS }}
@@ -57,7 +67,7 @@ jobs:
           keyStorePath="$RUNNER_TEMP/glance-release.jks"
           printf '%s' "$GLANCE_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$keyStorePath"
           export GLANCE_RELEASE_STORE_FILE="$keyStorePath"
-          ./gradlew --no-daemon -PglanceVersionName="${RELEASE_TAG#v}" verifyReleaseConfiguration :app:assembleRelease :app:lintRelease :app:testDebugUnitTest :core-crypto:test :core-network:test :core-data:test :core-security:test :app:verifyReleaseLoggingStripped
+          ./gradlew --no-daemon -Dorg.gradle.java.home="$JAVA_HOME" -PglanceVersionName="${RELEASE_TAG#v}" verifyReleaseConfiguration :app:assembleRelease :app:lintRelease :app:testDebugUnitTest :core-crypto:test :core-network:test :core-data:test :core-security:test :app:verifyReleaseLoggingStripped
           mv app/build/outputs/apk/release/app-release.apk "glance-${RELEASE_TAG}.apk"
           sha256sum "glance-${RELEASE_TAG}.apk" > "glance-${RELEASE_TAG}.apk.sha256"
       - name: Create GitHub release

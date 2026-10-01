@@ -318,8 +318,8 @@ internal fun HomeOnboarding(
     onAdd: () -> Unit,
     onImportWallet: () -> Unit,
     canImportWallet: Boolean,
-    importUnavailableMessage: String? = null,
     modifier: Modifier = Modifier,
+    importUnavailableMessage: String? = null,
 ) {
     val content = homeOnboardingContent()
     Column(
