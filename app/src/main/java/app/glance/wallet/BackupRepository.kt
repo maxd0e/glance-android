@@ -18,7 +18,9 @@ import app.glance.wallet.core.security.FIAT_CURRENCIES
 import app.glance.wallet.core.security.SecurityPreferences
 import app.glance.wallet.core.security.SecurityPreferencesStore
 import app.glance.wallet.core.security.UtxoView
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 
 internal class BackupRestoreException : Exception("Backup cannot be restored")
 
@@ -61,11 +63,13 @@ internal class BackupRepository(
         try {
             writeSettings(snapshot.settings)
         } catch (failure: Throwable) {
-            database.withTransaction {
-                snapshot.labels.forEach { label -> database.labelDao().delete(LabelReferenceType.valueOf(label.referenceType), label.referenceId) }
-                snapshot.serverConfigs.forEach { config -> database.serverConfigDao().deleteById(config.id) }
-                snapshot.watchedKeys.forEach { key -> database.watchedKeyDao().deleteWithOwnedData(key.id) }
-                snapshot.walletGroups.forEach { group -> database.walletGroupDao().deleteById(group.id) }
+            withContext(NonCancellable) {
+                database.withTransaction {
+                    snapshot.labels.forEach { label -> database.labelDao().delete(LabelReferenceType.valueOf(label.referenceType), label.referenceId) }
+                    snapshot.serverConfigs.forEach { config -> database.serverConfigDao().deleteById(config.id) }
+                    snapshot.watchedKeys.forEach { key -> database.watchedKeyDao().deleteWithOwnedData(key.id) }
+                    snapshot.walletGroups.forEach { group -> database.walletGroupDao().deleteById(group.id) }
+                }
             }
             throw failure
         }

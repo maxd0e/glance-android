@@ -13,6 +13,10 @@ import app.glance.wallet.core.data.db.LabelReferenceType
 import app.glance.wallet.core.data.db.ServerConfigEntity
 import app.glance.wallet.core.security.SecurityPreferencesStore
 import app.glance.wallet.core.security.UtxoView
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -225,6 +229,31 @@ class AddWatchTargetPersistenceTest {
             }.exceptionOrNull()
 
             assertTrue(failure is IllegalStateException)
+            assertTrue(BackupRepository(database, preferences).canRestore())
+        } finally {
+            preferences.wipe()
+            database.close()
+        }
+    }
+
+    @Test
+    fun restoreRollsBackImportedDatabaseStateWhenSettingsWriteIsCancelled() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val database = Room.inMemoryDatabaseBuilder(context, GlanceDatabase::class.java).allowMainThreadQueries().build()
+        val preferences = SecurityPreferencesStore.forTesting(context, "backup-restore-write-cancelled")
+        try {
+            val snapshot = BackupSnapshot(watchedKeys = listOf(BackupWatchedKey("fixed", "Cold storage", SINGLE_ADDRESS, "NATIVE_SEGWIT", "SINGLE_ADDRESS", null)))
+            val settingsWriteStarted = CompletableDeferred<Unit>()
+            val restore = async {
+                BackupRepository(database, preferences, writeSettings = {
+                    settingsWriteStarted.complete(Unit)
+                    awaitCancellation()
+                }).restore(snapshot)
+            }
+
+            settingsWriteStarted.await()
+            restore.cancelAndJoin()
+
             assertTrue(BackupRepository(database, preferences).canRestore())
         } finally {
             preferences.wipe()
