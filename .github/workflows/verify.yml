@@ -30,4 +30,4 @@ jobs:
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
       - name: Build and lint
-        run: ./gradlew --no-daemon build lint
+        run: ./gradlew --no-daemon --warning-mode all build lint
