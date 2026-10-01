@@ -131,7 +131,7 @@ import kotlin.math.roundToInt
 
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable internal fun HomeScreen(database: GlanceDatabase, fiatStore: FiatPriceStore, currency: String, torEnabled: Boolean, offlineMode: Boolean, torState: TorState, torReadySinceMillis: Long?, syncState: WalletSyncState, showChart: Boolean, historicalFiatRefreshRequest: Long, onRetrySync: () -> Unit, onAdd: () -> Unit, onSettings: () -> Unit, onSupport: () -> Unit, onKey: (String) -> Unit, onGroup: (String) -> Unit, onTorEnabled: (Boolean) -> Unit, onOfflineMode: (Boolean) -> Unit, onRenewTor: () -> Unit, onLoadMoreHistory: suspend (List<String>) -> Boolean) {
+@Composable internal fun HomeScreen(database: GlanceDatabase, fiatStore: FiatPriceStore, backup: BackupRepository, currency: String, torEnabled: Boolean, offlineMode: Boolean, torState: TorState, torReadySinceMillis: Long?, syncState: WalletSyncState, showChart: Boolean, historicalFiatRefreshRequest: Long, onRetrySync: () -> Unit, onBackupImported: suspend (BackupSettings) -> Unit, onAdd: () -> Unit, onSettings: () -> Unit, onSupport: () -> Unit, onKey: (String) -> Unit, onGroup: (String) -> Unit, onTorEnabled: (Boolean) -> Unit, onOfflineMode: (Boolean) -> Unit, onRenewTor: () -> Unit, onLoadMoreHistory: suspend (List<String>) -> Boolean) {
     val rawKeys by database.walletScreenDao().observeKeyBalances().collectAsState(initial = emptyList())
     val groupedKeys by database.walletScreenDao().observeGroupedBalances().collectAsState(initial = emptyList())
     val keys = rawKeys.filter { it.walletGroupId == null } + groupedKeys
@@ -140,7 +140,9 @@ import kotlin.math.roundToInt
     if (contentState == HomeContentState.ONBOARDING) {
         Scaffold(containerColor = GlanceBackground) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {
-                HomeOnboarding(onAdd = onAdd)
+                BackupImportWalletAction(backup, onBackupImported) { onImport, canImport, unavailableMessage ->
+                    HomeOnboarding(onAdd, onImport, canImport, unavailableMessage)
+                }
                 HomeStatusActions(
                     torEnabled = torEnabled,
                     offlineMode = offlineMode,
@@ -210,10 +212,7 @@ import kotlin.math.roundToInt
                     HomeStatusActions(torEnabled, offlineMode, torState, onConnectionClick = { connectionSheet = true }, onSettings = onSettings)
                 }
             }
-            if (contentState == HomeContentState.ONBOARDING) {
-                item { HomeOnboarding(onAdd) }
-            } else {
-                item {
+            item {
                     val satsTextSize = dashboardBalanceTextSize(DashboardDenomination.SATS, denomination)
                     val fiatTextSize = dashboardBalanceTextSize(DashboardDenomination.FIAT, denomination)
                     Column(
@@ -284,7 +283,6 @@ import kotlin.math.roundToInt
                 }
             }
         }
-        }
     }
     if (connectionSheet) TorConnectionSheet(torEnabled, offlineMode, torState, torReadySinceMillis, onDismiss = { connectionSheet = false }, onTorEnabled = onTorEnabled, onOfflineMode = onOfflineMode, onRenew = onRenewTor)
 }
@@ -305,7 +303,13 @@ internal fun HomeStatusActions(torEnabled: Boolean, offlineMode: Boolean, torSta
 }
 
 @Composable
-internal fun HomeOnboarding(onAdd: () -> Unit, modifier: Modifier = Modifier) {
+internal fun HomeOnboarding(
+    onAdd: () -> Unit,
+    onImportWallet: () -> Unit,
+    canImportWallet: Boolean,
+    importUnavailableMessage: String? = null,
+    modifier: Modifier = Modifier,
+) {
     val content = homeOnboardingContent()
     Column(
         modifier = modifier
@@ -353,13 +357,17 @@ internal fun HomeOnboarding(onAdd: () -> Unit, modifier: Modifier = Modifier) {
             colors = ButtonDefaults.buttonColors(containerColor = GlanceMandarin, contentColor = GlanceBackground),
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("add_key"),
         ) { Text("+  ${content.primaryActionLabel}") }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            content.backupPrompt,
-            color = GlanceMuted,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.testTag("restore_backup_prompt"),
-        )
+        Spacer(Modifier.height(10.dp))
+        OutlinedButton(
+            onClick = onImportWallet,
+            enabled = canImportWallet,
+            shape = GlancePillShape,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("import_wallet"),
+        ) { Text(content.restoreActionLabel) }
+        importUnavailableMessage?.let { message ->
+            Spacer(Modifier.height(6.dp))
+            Text(message, color = GlanceMuted, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+        }
     }
 }
 

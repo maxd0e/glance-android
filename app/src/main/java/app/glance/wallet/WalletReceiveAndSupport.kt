@@ -200,7 +200,6 @@ internal fun SettingsScreen(
     authentication: AuthenticationCoordinator,
     tor: TorController,
     backup: BackupRepository,
-    onBackupImported: suspend (BackupSettings) -> Unit = {},
     onBack: () -> Unit,
     onStealth: () -> Unit,
     onSupport: () -> Unit,
@@ -210,7 +209,6 @@ internal fun SettingsScreen(
     authentication = authentication,
     tor = tor,
     backup = backup,
-    onBackupImported = onBackupImported,
     biometricAvailable = BiometricUnlocker(BiometricManager.from(LocalContext.current)).isAvailable(),
     onBack = onBack,
     onStealth = onStealth,
@@ -225,7 +223,6 @@ internal fun Phase7SettingsContent(
     authentication: AuthenticationCoordinator,
     tor: TorController,
     backup: BackupRepository,
-    onBackupImported: suspend (BackupSettings) -> Unit = {},
     biometricAvailable: Boolean,
     onBack: () -> Unit,
     onStealth: () -> Unit,
@@ -280,7 +277,7 @@ internal fun Phase7SettingsContent(
                 SettingsDisclosureRow("Duress PIN", value = if (settings.credentials?.duressPinVerifier == null) "Not set" else "Configured") { duressExpanded = !duressExpanded }
                 if (duressExpanded) SettingsDivider()
             } }
-            item { BackupSettingsActions(backup, onBackupImported) }
+            item { BackupSettingsActions(backup) }
             if (duressExpanded) {
                 item {
                     SettingsGroup("Duress profile", "settings_group_duress_profile") {

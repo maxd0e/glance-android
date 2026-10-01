@@ -63,11 +63,16 @@ class WalletContentTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val preferences = SecurityPreferencesStore.forTesting(context, "wallet-content-ui")
     private val profiles = ProfileDatabaseManager(context)
+    private val settingsDatabase = Room.inMemoryDatabaseBuilder(context, GlanceDatabase::class.java)
+        .allowMainThreadQueries()
+        .build()
+    private val backup = BackupRepository(settingsDatabase, preferences)
 
     @After
     fun tearDown() {
         runBlocking { preferences.wipe() }
         profiles.deleteAll()
+        settingsDatabase.close()
     }
 
     @Test
@@ -175,6 +180,7 @@ class WalletContentTest {
                     preferences = preferences,
                     authentication = authentication,
                     tor = TorController(context),
+                    backup = backup,
                     biometricAvailable = false,
                     onBack = {},
                     onStealth = {},
@@ -212,6 +218,7 @@ class WalletContentTest {
                     preferences = preferences,
                     authentication = authentication,
                     tor = TorController(context),
+                    backup = backup,
                     biometricAvailable = false,
                     onBack = {},
                     onStealth = {},
@@ -222,6 +229,7 @@ class WalletContentTest {
 
         composeRule.onNodeWithText("UTXO view").assertDoesNotExist()
         composeRule.onNodeWithTag("setting_utxo_view").assertDoesNotExist()
+        composeRule.onNodeWithTag("backup_import").assertDoesNotExist()
     }
 
     @Test
@@ -234,6 +242,7 @@ class WalletContentTest {
                     preferences = preferences,
                     authentication = authentication,
                     tor = TorController(context),
+                    backup = backup,
                     biometricAvailable = false,
                     onBack = {},
                     onStealth = {},

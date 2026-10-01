@@ -22,7 +22,7 @@ class HomeOnboardingStateTest {
                     "PIN, biometric, and duress protection built in from the start",
                 ),
                 primaryActionLabel = "Add your first key",
-                backupPrompt = "Restoring from a backup?",
+                restoreActionLabel = "Import wallet",
             ),
             homeOnboardingContent(),
         )
