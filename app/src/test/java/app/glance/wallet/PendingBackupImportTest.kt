@@ -41,4 +41,20 @@ class PendingBackupImportTest {
             readBackupDocument(ByteArrayInputStream(byteArrayOf(1, 2, 3)), maximumBytes = 2)
         }
     }
+
+    @Test
+    fun `document reader preserves an encrypted backup for decryption`() {
+        val encrypted = BackupCodec.encrypt(
+            BackupSnapshot(watchedKeys = listOf(BackupWatchedKey("id", "label", "bc1qexample", "NATIVE_SEGWIT", "SINGLE_ADDRESS", null))),
+            "passphrase".toCharArray(),
+            DeterministicBackupRandom,
+        )
+
+        val read = readBackupDocument(ByteArrayInputStream(encrypted))
+
+        assertEquals(
+            BackupCodec.decrypt(encrypted, "passphrase".toCharArray()),
+            BackupCodec.decrypt(read, "passphrase".toCharArray()),
+        )
+    }
 }

@@ -131,12 +131,23 @@ import kotlin.math.roundToInt
 
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable internal fun HomeScreen(database: GlanceDatabase, fiatStore: FiatPriceStore, backup: BackupRepository, currency: String, torEnabled: Boolean, offlineMode: Boolean, torState: TorState, torReadySinceMillis: Long?, syncState: WalletSyncState, showChart: Boolean, historicalFiatRefreshRequest: Long, onRetrySync: () -> Unit, onBackupImported: suspend (BackupSettings) -> Unit, pendingBackupImport: PendingBackupImportState, onRequestBackupImport: () -> Unit, onClearPendingBackupImport: () -> Unit, onAdd: () -> Unit, onSettings: () -> Unit, onSupport: () -> Unit, onKey: (String) -> Unit, onGroup: (String) -> Unit, onTorEnabled: (Boolean) -> Unit, onOfflineMode: (Boolean) -> Unit, onRenewTor: () -> Unit, onLoadMoreHistory: suspend (List<String>) -> Boolean) {
+@Composable internal fun HomeScreen(database: GlanceDatabase, fiatStore: FiatPriceStore, backup: BackupRepository, currency: String, torEnabled: Boolean, offlineMode: Boolean, torState: TorState, torReadySinceMillis: Long?, syncState: WalletSyncState, showChart: Boolean, historicalFiatRefreshRequest: Long, onRetrySync: () -> Unit, onBackupImported: suspend (BackupSettings) -> Unit, pendingBackupImport: PendingBackupImportState, onRequestBackupImport: () -> Unit, onClearPendingBackupImport: () -> Unit, onAdd: () -> Unit, onSettings: () -> Unit, onSupport: () -> Unit, onKey: (String) -> Unit, onGroup: (String) -> Unit, onTorEnabled: (Boolean) -> Unit, onOfflineMode: (Boolean) -> Unit, onRenewTor: () -> Unit, onLoadMoreHistory: suspend (List<String>) -> Boolean, backupExportFeedback: BackupExportFeedback? = null, onDismissBackupExportFeedback: () -> Unit = {}) {
     val rawKeys by database.walletScreenDao().observeKeyBalances().collectAsState(initial = emptyList())
     val groupedKeys by database.walletScreenDao().observeGroupedBalances().collectAsState(initial = emptyList())
     val keys = rawKeys.filter { it.walletGroupId == null } + groupedKeys
     val contentState = homeContentState(keys.size)
     var connectionSheet by remember { mutableStateOf(false) }
+    backupExportFeedback?.let { feedback ->
+        AlertDialog(
+            onDismissRequest = onDismissBackupExportFeedback,
+            confirmButton = { Button(onClick = onDismissBackupExportFeedback) { Text("OK") } },
+            title = { Text("Backup") },
+            text = { Text(when (feedback) {
+                is BackupExportFeedback.Exported -> "Backup exported with ${feedback.watchedTargetCount} watched target(s)."
+                BackupExportFeedback.Failed -> "Backup export failed. Try again."
+            }) },
+        )
+    }
     if (contentState == HomeContentState.ONBOARDING) {
         Scaffold(containerColor = GlanceBackground) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {

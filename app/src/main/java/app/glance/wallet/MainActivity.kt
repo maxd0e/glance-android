@@ -55,6 +55,7 @@ class MainActivity : FragmentActivity() {
     private lateinit var authentication: AuthenticationCoordinator
     private lateinit var stealthGate: StealthDisguiseGate
     private lateinit var pendingBackupImport: PendingBackupImport
+    private lateinit var pendingBackupExport: PendingBackupExport
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,6 +69,7 @@ class MainActivity : FragmentActivity() {
             eraseStateStore = FileEraseStateStore(File(applicationContext.noBackupFilesDir, "erase-incomplete.marker")),
         )
         pendingBackupImport = ViewModelProvider(this)[PendingBackupImport::class.java]
+        pendingBackupExport = ViewModelProvider(this)[PendingBackupExport::class.java]
         stealthGate = StealthDisguiseGate(launchStealthMode())
         lifecycleScope.launch { authentication.initialize() }
         setContent {
@@ -75,6 +77,7 @@ class MainActivity : FragmentActivity() {
             val settings by preferences.data.collectAsState<SecurityPreferences, SecurityPreferences?>(initial = null)
             val torState by torController.state.collectAsState()
             val pendingImportState by pendingBackupImport.state.collectAsState()
+            val backupExportFeedback by pendingBackupExport.feedback.collectAsState()
             val openBackupDocument = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
                 if (uri != null) lifecycleScope.launch {
                     runCatching {
@@ -84,6 +87,32 @@ class MainActivity : FragmentActivity() {
                         }
                     }.onSuccess(pendingBackupImport::stage)
                         .onFailure { pendingBackupImport.markUnreadable() }
+                }
+            }
+            val createBackupDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+                if (uri == null) {
+                    pendingBackupExport.clear()
+                } else {
+                    val encrypted = pendingBackupExport.takeForWrite()
+                    if (encrypted == null) {
+                        pendingBackupExport.clear()
+                    } else lifecycleScope.launch {
+                        var succeeded = false
+                        var reportFeedback = true
+                        try {
+                            withContext(Dispatchers.IO) {
+                                contentResolver.openOutputStream(uri)?.use { it.write(encrypted) } ?: error("write")
+                            }
+                            succeeded = true
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            reportFeedback = false
+                            throw cancelled
+                        } catch (_: Exception) {
+                            // The generic Home feedback deliberately avoids exposing document-provider details.
+                        } finally {
+                            pendingBackupExport.completeWrite(encrypted, succeeded, reportFeedback)
+                        }
+                    }
                 }
             }
             var initialTorBootstrap by remember { mutableStateOf(true) }
@@ -132,6 +161,12 @@ class MainActivity : FragmentActivity() {
                     pendingImportState,
                     onRequestBackupImport = { openBackupDocument.launch(arrayOf("application/octet-stream", "application/json", "*/*")) },
                     onClearPendingBackupImport = pendingBackupImport::clear,
+                    backupExportFeedback = backupExportFeedback,
+                    onConsumeBackupExportFeedback = { pendingBackupExport.consumeFeedback() },
+                    onEncryptedBackupReady = { encrypted, watchedTargetCount ->
+                        pendingBackupExport.stage(encrypted, watchedTargetCount)
+                        createBackupDocument.launch("glance-backup-${System.currentTimeMillis()}.glancebackup")
+                    },
                 )
             } }
         }
@@ -208,7 +243,7 @@ internal fun TorBootstrapScreen() = Box(
     }
 }
 
-@Composable private fun GlanceApp(state: AuthenticationState, settings: SecurityPreferences, authentication: AuthenticationCoordinator, preferences: SecurityPreferencesStore, torController: TorController, biometricUnlock: () -> Unit, pendingBackupImport: PendingBackupImportState, onRequestBackupImport: () -> Unit, onClearPendingBackupImport: () -> Unit) = when (state) {
+@Composable private fun GlanceApp(state: AuthenticationState, settings: SecurityPreferences, authentication: AuthenticationCoordinator, preferences: SecurityPreferencesStore, torController: TorController, biometricUnlock: () -> Unit, pendingBackupImport: PendingBackupImportState, onRequestBackupImport: () -> Unit, onClearPendingBackupImport: () -> Unit, backupExportFeedback: BackupExportFeedback?, onConsumeBackupExportFeedback: () -> Unit, onEncryptedBackupReady: (ByteArray, Int) -> Unit) = when (state) {
     AuthenticationState.Initializing -> Box(Modifier.fillMaxSize())
     AuthenticationState.SetupRequired -> PinSetup(authentication)
     AuthenticationState.Locked -> PinUnlock(authentication, settings, biometricUnlock)
@@ -218,7 +253,7 @@ internal fun TorBootstrapScreen() = Box(
     is AuthenticationState.Unlocked -> if (state.session.type == ProfileType.DECOY) {
         DecoyPhase7Wallet(state.session, authentication, torController, settings, preferences)
     } else {
-        Phase7Wallet(state.session, settings, preferences, authentication, torController, pendingBackupImport, onRequestBackupImport, onClearPendingBackupImport)
+        Phase7Wallet(state.session, settings, preferences, authentication, torController, pendingBackupImport, onRequestBackupImport, onClearPendingBackupImport, backupExportFeedback, onConsumeBackupExportFeedback, onEncryptedBackupReady)
     }
 }
 

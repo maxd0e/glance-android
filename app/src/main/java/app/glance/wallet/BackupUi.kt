@@ -1,7 +1,5 @@
 package app.glance.wallet
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,7 +15,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -27,32 +24,30 @@ import kotlinx.coroutines.withContext
 
 internal fun requiresDirectConnectionRestoreWarning(snapshot: BackupSnapshot): Boolean = !snapshot.settings.torEnabled
 
-@Composable internal fun BackupSettingsActions(repository: BackupRepository) {
-    val context = LocalContext.current
+@Composable internal fun BackupSettingsActions(repository: BackupRepository, onEncryptedBackupReady: (ByteArray, Int) -> Unit) {
     val scope = rememberCoroutineScope()
     var exportPassphrase by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
-    val create = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
-        val passphrase = exportPassphrase ?: return@rememberLauncherForActivityResult
-        exportPassphrase = null
-        if (uri != null) scope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    val snapshot = repository.snapshot()
-                    context.contentResolver.openOutputStream(uri)?.use {
-                        it.write(BackupCodec.encrypt(snapshot, passphrase.toCharArray()))
-                    } ?: error("write")
-                    snapshot.watchedKeys.size
-                }
-            }.onSuccess { targetCount ->
-                message = "Backup exported with $targetCount watched target(s)."
-            }.onFailure { message = "Backup export failed. Try again." }
-        }
-    }
     SettingsGroup("Backup", "settings_group_backup") {
         SettingsDisclosureRow("Export encrypted backup", modifier = Modifier.testTag("backup_export")) { exportPassphrase = "" }
     }
-    exportPassphrase?.let { value -> PassphraseDialog("Export backup", value, confirmation = true, onDismiss = { exportPassphrase = null }) { passphrase -> exportPassphrase = passphrase; create.launch("glance-backup-${System.currentTimeMillis()}.glancebackup") } }
+    exportPassphrase?.let { value -> PassphraseDialog("Export backup", value, confirmation = true, onDismiss = { exportPassphrase = null }) { passphrase ->
+        exportPassphrase = null
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val passphraseChars = passphrase.toCharArray()
+                    try {
+                        val snapshot = repository.snapshot()
+                        BackupCodec.encrypt(snapshot, passphraseChars) to snapshot.watchedKeys.size
+                    } finally {
+                        passphraseChars.fill('\u0000')
+                    }
+                }
+            }.onSuccess { (encrypted, watchedTargetCount) -> onEncryptedBackupReady(encrypted, watchedTargetCount) }
+                .onFailure { message = "Backup export failed. Try again." }
+        }
+    } }
     message?.let { text -> AlertDialog(onDismissRequest = { message = null }, confirmButton = { Button(onClick = { message = null }) { Text("OK") } }, title = { Text("Backup") }, text = { Text(text) }) }
 }
 

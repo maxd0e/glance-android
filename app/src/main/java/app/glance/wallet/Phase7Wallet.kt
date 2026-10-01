@@ -296,6 +296,9 @@ internal fun Phase7Wallet(
     pendingBackupImport: PendingBackupImportState,
     onRequestBackupImport: () -> Unit,
     onClearPendingBackupImport: () -> Unit,
+    backupExportFeedback: BackupExportFeedback?,
+    onConsumeBackupExportFeedback: () -> Unit,
+    onEncryptedBackupReady: (ByteArray, Int) -> Unit,
 ) {
     val nav = rememberNavController()
     val scope = rememberCoroutineScope()
@@ -349,7 +352,7 @@ internal fun Phase7Wallet(
     CompositionLocalProvider(LocalStreetMode provides settings.streetModeEnabled) {
     StreetModeShakeEffect(enabled = true) { scope.launch { preferences.update { it.copy(streetModeEnabled = !it.streetModeEnabled) } } }
     NavHost(nav, startDestination = Routes.HOME) {
-        composable(Routes.HOME) { HomeScreen(session.database, fiatStore, backupRepository, settings.fiatCurrency, settings.torEnabled, settings.offlineMode, torState, torController.readySinceMillis.collectAsState().value, syncState, settings.showBalanceChart, historicalFiatRefreshRequest, refreshHome, onBackupImported = { restored -> syncCoordinator.requestSync(restored.torEnabled, torState, restored.offlineMode) }, pendingBackupImport = pendingBackupImport, onRequestBackupImport = onRequestBackupImport, onClearPendingBackupImport = onClearPendingBackupImport, onAdd = { nav.navigate(Routes.ADD) }, onSettings = { nav.navigate(Routes.SETTINGS) }, onSupport = { nav.navigate(Routes.SUPPORT) }, onKey = { nav.navigate("detail/$it") }, onGroup = { nav.navigate("group-detail/$it") }, onTorEnabled = { enabled -> scope.launch { preferences.update { it.copy(torEnabled = enabled) } } }, onOfflineMode = { enabled -> scope.launch { preferences.update { it.copy(offlineMode = enabled) } } }, onRenewTor = app::renewTorConnection, onLoadMoreHistory = { keyIds -> if (settings.offlineMode || (settings.torEnabled && torState !is TorState.Ready)) false else app.networkClients.syncEngine(RoomWalletSyncStore(session.database)).loadMoreSingleAddressHistories(keyIds) }) }
+        composable(Routes.HOME) { HomeScreen(session.database, fiatStore, backupRepository, settings.fiatCurrency, settings.torEnabled, settings.offlineMode, torState, torController.readySinceMillis.collectAsState().value, syncState, settings.showBalanceChart, historicalFiatRefreshRequest, refreshHome, onBackupImported = { restored -> syncCoordinator.requestSync(restored.torEnabled, torState, restored.offlineMode) }, pendingBackupImport = pendingBackupImport, onRequestBackupImport = onRequestBackupImport, onClearPendingBackupImport = onClearPendingBackupImport, onAdd = { nav.navigate(Routes.ADD) }, onSettings = { nav.navigate(Routes.SETTINGS) }, onSupport = { nav.navigate(Routes.SUPPORT) }, onKey = { nav.navigate("detail/$it") }, onGroup = { nav.navigate("group-detail/$it") }, onTorEnabled = { enabled -> scope.launch { preferences.update { it.copy(torEnabled = enabled) } } }, onOfflineMode = { enabled -> scope.launch { preferences.update { it.copy(offlineMode = enabled) } } }, onRenewTor = app::renewTorConnection, onLoadMoreHistory = { keyIds -> if (settings.offlineMode || (settings.torEnabled && torState !is TorState.Ready)) false else app.networkClients.syncEngine(RoomWalletSyncStore(session.database)).loadMoreSingleAddressHistories(keyIds) }, backupExportFeedback = backupExportFeedback, onDismissBackupExportFeedback = { onConsumeBackupExportFeedback() }) }
         composable(Routes.ADD) {
             AddWatchTargetScreen(
                 database = session.database,
@@ -360,7 +363,7 @@ internal fun Phase7Wallet(
                 onBack = { nav.popPhase7BackStackSafely() },
             )
         }
-        composable(Routes.SETTINGS) { SettingsScreen(settings, preferences, authentication, torController, backupRepository, onBack = { nav.popPhase7BackStackSafely() }, onStealth = { nav.navigate(Routes.STEALTH) }, onSupport = { nav.navigate(Routes.SUPPORT) }) }
+        composable(Routes.SETTINGS) { SettingsScreen(settings, preferences, authentication, torController, backupRepository, onEncryptedBackupReady, onBack = { nav.popPhase7BackStackSafely() }, onStealth = { nav.navigate(Routes.STEALTH) }, onSupport = { nav.navigate(Routes.SUPPORT) }) }
         composable(Routes.STEALTH) { StealthModeSetupScreen(preferences, settings.stealthMode, onBack = { nav.popPhase7BackStackSafely() }) }
         composable(Routes.SUPPORT) { SupportScreen(onBack = { nav.popPhase7BackStackSafely() }) }
         composable(Routes.DETAIL, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->

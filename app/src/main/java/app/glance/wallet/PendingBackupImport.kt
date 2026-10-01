@@ -53,3 +53,65 @@ internal fun readBackupDocument(input: InputStream, maximumBytes: Int = MAXIMUM_
 }
 
 private const val MAXIMUM_BACKUP_DOCUMENT_BYTES = 1_500_000
+
+/** Keeps an already encrypted export alive while Android's document picker locks the app. */
+internal sealed interface PendingBackupExportState {
+    data object Idle : PendingBackupExportState
+    data object Ready : PendingBackupExportState
+    data object Writing : PendingBackupExportState
+}
+
+internal sealed interface BackupExportFeedback {
+    data class Exported(val watchedTargetCount: Int) : BackupExportFeedback
+    data object Failed : BackupExportFeedback
+}
+
+internal class PendingBackupExport : ViewModel() {
+    private val lock = Any()
+    private val mutableState = MutableStateFlow<PendingBackupExportState>(PendingBackupExportState.Idle)
+    private val mutableFeedback = MutableStateFlow<BackupExportFeedback?>(null)
+    val state: StateFlow<PendingBackupExportState> = mutableState.asStateFlow()
+    val feedback: StateFlow<BackupExportFeedback?> = mutableFeedback.asStateFlow()
+    private var encryptedBytes: ByteArray? = null
+    private var watchedTargetCount: Int = 0
+
+    fun stage(bytes: ByteArray, watchedTargetCount: Int) = synchronized(lock) {
+        clearLocked()
+        encryptedBytes = bytes
+        this.watchedTargetCount = watchedTargetCount
+        mutableState.value = PendingBackupExportState.Ready
+    }
+
+    fun takeForWrite(): ByteArray? = synchronized(lock) {
+        if (mutableState.value != PendingBackupExportState.Ready) return null
+        encryptedBytes?.also {
+            encryptedBytes = null
+            mutableState.value = PendingBackupExportState.Writing
+        }
+    }
+
+    fun completeWrite(bytes: ByteArray, succeeded: Boolean, reportFeedback: Boolean = true) = synchronized(lock) {
+        bytes.fill(0)
+        val count = watchedTargetCount
+        watchedTargetCount = 0
+        mutableState.value = PendingBackupExportState.Idle
+        if (reportFeedback) mutableFeedback.value = if (succeeded) BackupExportFeedback.Exported(count) else BackupExportFeedback.Failed
+    }
+
+    fun clear() = synchronized(lock) { clearLocked() }
+
+    fun consumeFeedback(): BackupExportFeedback? = synchronized(lock) {
+        mutableFeedback.value.also { mutableFeedback.value = null }
+    }
+
+    override fun onCleared() {
+        clear()
+    }
+
+    private fun clearLocked() {
+        encryptedBytes?.fill(0)
+        encryptedBytes = null
+        watchedTargetCount = 0
+        mutableState.value = PendingBackupExportState.Idle
+    }
+}
