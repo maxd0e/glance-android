@@ -152,7 +152,12 @@ import kotlin.math.roundToInt
         Scaffold(containerColor = GlanceBackground) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {
                 BackupImportWalletAction(backup, onBackupImported, pendingBackupImport, onRequestBackupImport, onClearPendingBackupImport) { onImport, canImport, unavailableMessage ->
-                    HomeOnboarding(onAdd, onImport, canImport, unavailableMessage)
+                    HomeOnboarding(
+                        onAdd = onAdd,
+                        onImportWallet = onImport,
+                        canImportWallet = canImport,
+                        importUnavailableMessage = unavailableMessage,
+                    )
                 }
                 HomeStatusActions(
                     torEnabled = torEnabled,
