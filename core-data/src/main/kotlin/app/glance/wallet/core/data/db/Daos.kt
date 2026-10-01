@@ -291,6 +291,9 @@ interface ServerConfigDao {
 
     @Query("SELECT * FROM server_configs ORDER BY isCustom, host")
     suspend fun all(): List<ServerConfigEntity>
+
+    @Query("DELETE FROM server_configs WHERE id = :id")
+    suspend fun deleteById(id: String)
 }
 
 @Dao

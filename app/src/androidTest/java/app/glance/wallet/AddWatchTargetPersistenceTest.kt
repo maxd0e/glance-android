@@ -8,6 +8,9 @@ import app.glance.wallet.core.crypto.parseWatchedKey
 import app.glance.wallet.core.data.db.GlanceDatabase
 import app.glance.wallet.core.data.db.ScriptType as DataScriptType
 import app.glance.wallet.core.data.db.AddressChain
+import app.glance.wallet.core.data.db.LabelEntity
+import app.glance.wallet.core.data.db.LabelReferenceType
+import app.glance.wallet.core.data.db.ServerConfigEntity
 import app.glance.wallet.core.security.SecurityPreferencesStore
 import app.glance.wallet.core.security.UtxoView
 import kotlinx.coroutines.flow.first
@@ -179,6 +182,53 @@ class AddWatchTargetPersistenceTest {
             preferences.wipe()
             source.close()
             destination.close()
+        }
+    }
+
+    @Test
+    fun backupRoundTripRestoresWatchedKeysLabelsServersAndSettingsIntoACleanInstall() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val source = Room.inMemoryDatabaseBuilder(context, GlanceDatabase::class.java).allowMainThreadQueries().build()
+        val destination = Room.inMemoryDatabaseBuilder(context, GlanceDatabase::class.java).allowMainThreadQueries().build()
+        val sourcePreferences = SecurityPreferencesStore.forTesting(context, "backup-round-trip-source")
+        val destinationPreferences = SecurityPreferencesStore.forTesting(context, "backup-round-trip-destination")
+        try {
+            persistWatchTarget(source, "Cold storage", SINGLE_ADDRESS, null)
+            source.labelDao().upsert(LabelEntity(LabelReferenceType.ADDRESS, SINGLE_ADDRESS, "Savings"))
+            source.serverConfigDao().upsert(ServerConfigEntity("custom-electrum", "electrum", "node.example", 50002, true, true))
+            sourcePreferences.update {
+                it.copy(torEnabled = false, fiatCurrency = "EUR", utxoView = UtxoView.LIST, showBalanceChart = false, offlineMode = true, streetModeEnabled = true)
+            }
+            val expected = BackupRepository(source, sourcePreferences).snapshot()
+
+            BackupRepository(destination, destinationPreferences).restore(expected, directConnectionConfirmed = true)
+
+            assertEquals(expected, BackupRepository(destination, destinationPreferences).snapshot())
+        } finally {
+            sourcePreferences.wipe()
+            destinationPreferences.wipe()
+            source.close()
+            destination.close()
+        }
+    }
+
+    @Test
+    fun restoreRollsBackImportedDatabaseStateWhenSettingsWriteFails() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val database = Room.inMemoryDatabaseBuilder(context, GlanceDatabase::class.java).allowMainThreadQueries().build()
+        val preferences = SecurityPreferencesStore.forTesting(context, "backup-restore-write-failure")
+        try {
+            val snapshot = BackupSnapshot(watchedKeys = listOf(BackupWatchedKey("fixed", "Cold storage", SINGLE_ADDRESS, "NATIVE_SEGWIT", "SINGLE_ADDRESS", null)))
+
+            val failure = runCatching {
+                BackupRepository(database, preferences, writeSettings = { throw IllegalStateException("write failed") }).restore(snapshot)
+            }.exceptionOrNull()
+
+            assertTrue(failure is IllegalStateException)
+            assertTrue(BackupRepository(database, preferences).canRestore())
+        } finally {
+            preferences.wipe()
+            database.close()
         }
     }
 

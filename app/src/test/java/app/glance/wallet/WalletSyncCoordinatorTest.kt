@@ -98,6 +98,22 @@ class WalletSyncCoordinatorTest {
     }
 
     @Test
+    fun `restored direct wallet configures routing before requesting sync`() = runBlocking {
+        var routingConfigured = false
+        var requestedAfterRouting = false
+        val restored = BackupSettings(torEnabled = false)
+
+        requestRestoredWalletSync(
+            settings = restored,
+            configureNetwork = { routingConfigured = true },
+            routeState = { TorState.Disabled },
+            requestSync = { _, _, _ -> requestedAfterRouting = routingConfigured },
+        )
+
+        assertTrue(requestedAfterRouting)
+    }
+
+    @Test
     fun `network failure is visible and retryable`() = runBlocking {
         var requests = 0
         val coordinator = WalletSyncCoordinator {

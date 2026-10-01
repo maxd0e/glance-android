@@ -23,7 +23,13 @@ import kotlinx.coroutines.flow.first
 internal class BackupRestoreException : Exception("Backup cannot be restored")
 
 /** Maps only explicitly exportable configuration. Security state and sync caches never cross this boundary. */
-internal class BackupRepository(private val database: GlanceDatabase, private val preferences: SecurityPreferencesStore) {
+internal class BackupRepository(
+    private val database: GlanceDatabase,
+    private val preferences: SecurityPreferencesStore,
+    private val writeSettings: suspend (BackupSettings) -> Unit = { settings ->
+        preferences.update { current -> current.withBackupSettings(settings) }
+    },
+) {
     suspend fun canRestore(): Boolean = database.watchedKeyDao().observeAll().first().isEmpty() && database.walletGroupDao().all().isEmpty() && database.labelDao().all().isEmpty() && database.serverConfigDao().all().isEmpty()
     suspend fun snapshot(): BackupSnapshot {
         val snapshot = database.withTransaction {
@@ -52,7 +58,17 @@ internal class BackupRepository(private val database: GlanceDatabase, private va
             snapshot.labels.forEach { label -> database.labelDao().upsert(LabelEntity(LabelReferenceType.valueOf(label.referenceType), label.referenceId, label.text)) }
             snapshot.serverConfigs.forEach { config -> database.serverConfigDao().upsert(ServerConfigEntity(config.id, config.protocol, config.host, config.port, config.useTls, config.isCustom)) }
         }
-        preferences.update { current -> current.withBackupSettings(snapshot.settings) }
+        try {
+            writeSettings(snapshot.settings)
+        } catch (failure: Throwable) {
+            database.withTransaction {
+                snapshot.labels.forEach { label -> database.labelDao().delete(LabelReferenceType.valueOf(label.referenceType), label.referenceId) }
+                snapshot.serverConfigs.forEach { config -> database.serverConfigDao().deleteById(config.id) }
+                snapshot.watchedKeys.forEach { key -> database.watchedKeyDao().deleteWithOwnedData(key.id) }
+                snapshot.walletGroups.forEach { group -> database.walletGroupDao().deleteById(group.id) }
+            }
+            throw failure
+        }
     }
 
     private fun validate(snapshot: BackupSnapshot) {
