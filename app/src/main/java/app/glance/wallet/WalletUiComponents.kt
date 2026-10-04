@@ -258,6 +258,7 @@ internal fun GlanceFilledTextField(
     singleLine: Boolean = false,
     readOnly: Boolean = false,
     trailingIcon: (@Composable (() -> Unit))? = null,
+    keyboardOptions: androidx.compose.foundation.text.KeyboardOptions = androidx.compose.foundation.text.KeyboardOptions.Default,
 ) = TextField(
     value = value,
     onValueChange = onValueChange,
@@ -267,6 +268,7 @@ internal fun GlanceFilledTextField(
     singleLine = singleLine,
     readOnly = readOnly,
     trailingIcon = trailingIcon,
+    keyboardOptions = keyboardOptions,
     shape = watchTargetFieldShape,
     colors = TextFieldDefaults.colors(
         focusedContainerColor = watchTargetFieldColor,

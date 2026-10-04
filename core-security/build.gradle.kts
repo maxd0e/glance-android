@@ -22,6 +22,7 @@ dependencies {
     implementation(libs.timber)
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
+    testRuntimeOnly(libs.acinq.secp256k1.jni.jvm)
 }
 
 val securitySources = fileTree("src") { include("**/*.kt", "**/*.java") }

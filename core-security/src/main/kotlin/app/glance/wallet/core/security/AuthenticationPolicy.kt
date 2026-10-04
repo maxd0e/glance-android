@@ -6,14 +6,14 @@ data class RetryState(
 )
 
 class AuthenticationPolicy(initialState: RetryState = RetryState()) {
-    private var state = initialState
+    private var state = initialState.copy(failedAttempts = initialState.failedAttempts.coerceAtLeast(0))
 
     fun restore(state: RetryState) {
-        this.state = state
+        this.state = state.copy(failedAttempts = state.failedAttempts.coerceAtLeast(0))
     }
 
     fun recordFailure(nowMillis: Long): RetryState {
-        val failures = state.failedAttempts + 1
+        val failures = if (state.failedAttempts == Int.MAX_VALUE) Int.MAX_VALUE else state.failedAttempts + 1
         val delayMillis = if (failures < FIRST_THROTTLED_ATTEMPT) 0 else {
             (FIRST_DELAY_MILLIS * (1L shl (failures - FIRST_THROTTLED_ATTEMPT).coerceAtMost(MAX_DELAY_SHIFT)))
                 .coerceAtMost(MAX_DELAY_MILLIS)

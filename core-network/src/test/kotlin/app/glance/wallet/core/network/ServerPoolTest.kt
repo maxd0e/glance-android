@@ -11,6 +11,14 @@ import org.junit.Test
 
 class ServerPoolTest {
     @Test
+    fun `manifest version floor cannot roll back`() {
+        val store = InMemoryServerManifestStore()
+        store.save(ServerManifest(7, 2_000L, listOf(ServerDefinition.electrum("new.example", 50002))))
+        store.save(ServerManifest(6, 3_000L, listOf(ServerDefinition.electrum("old.example", 50002))))
+        assertEquals(7L, store.highestVersion())
+    }
+
+    @Test
     fun `manifest without mempool keeps bootstrap fiat endpoint selectable`() {
         val mempool = ServerDefinition.http(
             ServerRole.MEMPOOL_SPACE,
@@ -67,7 +75,7 @@ class ServerPoolTest {
     }
 
     @Test
-    fun `restored endpoints without health rows remain selectable`() {
+    fun `unverified restored endpoints cannot replace bundled authority`() {
         val endpoint = ServerDefinition.electrum("restored.example", 50002)
         val store = InMemoryServerPoolStateStore().apply {
             save(ServerPoolSnapshot(endpoints = listOf(endpoint), health = emptyList()))
@@ -75,7 +83,19 @@ class ServerPoolTest {
 
         val pool = ServerPool(listOf(ServerDefinition.electrum("bootstrap.example", 50002)), stateStore = store)
 
-        assertEquals(endpoint, pool.choose(ServerRole.ELECTRUM))
+        assertEquals("bootstrap.example", pool.choose(ServerRole.ELECTRUM).host)
+    }
+
+    @Test
+    fun `expired manifest endpoints fall back to bundled servers`() {
+        val bundled = ServerDefinition.electrum("bootstrap.example", 50002)
+        val remote = ServerDefinition.electrum("remote.example", 50002)
+        var now = 1_000L
+        val pool = ServerPool(listOf(bundled), clockEpochSeconds = { now })
+        pool.replaceFromManifest(ServerManifest(4, 1_001L, listOf(remote)))
+        assertEquals(remote, pool.choose(ServerRole.ELECTRUM))
+        now = 1_001L
+        assertEquals(bundled, pool.choose(ServerRole.ELECTRUM))
     }
 
     @Test

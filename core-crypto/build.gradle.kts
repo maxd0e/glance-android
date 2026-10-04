@@ -9,6 +9,6 @@ kotlin {
 dependencies {
     implementation(project(":core-common"))
     implementation(libs.acinq.bitcoin.kmp)
-    implementation(libs.acinq.secp256k1.jni.jvm)
     testImplementation(libs.junit)
+    testRuntimeOnly(libs.acinq.secp256k1.jni.jvm)
 }

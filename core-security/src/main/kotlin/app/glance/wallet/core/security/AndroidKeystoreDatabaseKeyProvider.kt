@@ -5,6 +5,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import app.glance.wallet.core.common.security.DatabaseKeyProvider
 import java.io.File
+import java.io.FileOutputStream
 import java.security.KeyStore
 import java.security.SecureRandom
 import javax.crypto.Cipher
@@ -34,7 +35,16 @@ class AndroidKeystoreDatabaseKeyProvider(
         SecureRandom().nextBytes(key)
         val encrypted = encrypt(key)
         wrappedKeyFile.parentFile?.mkdirs()
-        wrappedKeyFile.writeBytes(encrypted)
+        val temporary = File(wrappedKeyFile.parentFile, "${wrappedKeyFile.name}.tmp")
+        try {
+            FileOutputStream(temporary).use { output ->
+                output.write(encrypted)
+                output.fd.sync()
+            }
+            check(temporary.renameTo(wrappedKeyFile)) { "Unable to persist wrapped database key." }
+        } finally {
+            if (temporary.exists()) temporary.delete()
+        }
     }
 
     private fun encrypt(plaintext: ByteArray): ByteArray {
@@ -53,7 +63,8 @@ class AndroidKeystoreDatabaseKeyProvider(
                 init(Cipher.DECRYPT_MODE, existingWrappingKey(), GCMParameterSpec(GCM_TAG_LENGTH_BITS, bytes.copyOfRange(HEADER_SIZE, HEADER_SIZE + ivLength)))
                 doFinal(bytes.copyOfRange(HEADER_SIZE + ivLength, bytes.size))
             }
-        } catch (_: java.security.GeneralSecurityException) {
+        } catch (failure: Exception) {
+            if (failure is DatabaseKeyRecoveryRequiredException) throw failure
             throw DatabaseKeyRecoveryRequiredException()
         }
     }

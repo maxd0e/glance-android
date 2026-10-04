@@ -23,7 +23,7 @@ class GlanceDatabaseMigrationTest {
 
         helper.runMigrationsAndValidate(
             TEST_DATABASE,
-            12,
+            14,
             true,
             *GlanceDatabaseMigrations.ALL,
         ).close()

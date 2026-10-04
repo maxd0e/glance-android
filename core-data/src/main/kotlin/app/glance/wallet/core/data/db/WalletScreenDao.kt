@@ -118,6 +118,7 @@ interface WalletScreenDao {
         WHERE a.keyId = :keyId
         GROUP BY h.txid
         ORDER BY CASE WHEN MAX(h.confirmations) = 0 THEN 0 ELSE 1 END,
+          CASE WHEN MAX(h.confirmations) = 0 THEN MAX(h.id) END DESC,
           MAX(h.blockHeight) DESC, h.txid DESC
         LIMIT :limit OFFSET :offset
     """)
@@ -178,7 +179,9 @@ interface WalletScreenDao {
         LEFT JOIN labels l ON l.referenceType = 'TRANSACTION' AND l.referenceId = h.txid
         WHERE k.walletGroupId = :groupId
         GROUP BY h.txid
-        ORDER BY CASE WHEN MAX(h.confirmations) = 0 THEN 0 ELSE 1 END, MAX(h.blockHeight) DESC, h.txid DESC
+        ORDER BY CASE WHEN MAX(h.confirmations) = 0 THEN 0 ELSE 1 END,
+          CASE WHEN MAX(h.confirmations) = 0 THEN MAX(h.id) END DESC,
+          MAX(h.blockHeight) DESC, h.txid DESC
         LIMIT :limit OFFSET :offset
     """)
     fun observeGroupTransactionPage(groupId: String, limit: Int, offset: Int): Flow<List<GroupTransactionRow>>

@@ -97,19 +97,21 @@ class ServerPool(
     initial: List<ServerDefinition>,
     private val quarantineMillis: Long = 60_000L,
     private val stateStore: ServerPoolStateStore? = null,
+    private val clockEpochSeconds: () -> Long = { System.currentTimeMillis() / 1_000 },
 ) {
     private data class Health(var failures: Int = 0, var lastSuccess: Long = Long.MIN_VALUE, var retryAt: Long = 0L)
 
-    private val endpoints = initial.distinctBy(ServerDefinition::id).toMutableList()
+    private val bundledEndpoints = initial.distinctBy(ServerDefinition::id)
+    private var manifest: ServerManifest? = null
+    private val endpoints = bundledEndpoints.toMutableList()
     private val health = endpoints.associate { it.id to Health() }.toMutableMap()
 
     init {
         require(endpoints.isNotEmpty()) { "At least one server is required" }
         stateStore?.load()?.let { snapshot ->
-            endpoints.removeAll { !it.isCustom }
-            endpoints.addAll(snapshot.endpoints.filterNot(ServerDefinition::isCustom).distinctBy(ServerDefinition::id))
             snapshot.health.forEach { item ->
-                health[item.serverId] = Health(item.failures, item.lastSuccess, item.retryAt)
+                if (item.serverId in bundledEndpoints.map(ServerDefinition::id))
+                    health[item.serverId] = Health(item.failures, item.lastSuccess, item.retryAt)
             }
             // A process interruption can leave endpoint rows without matching health rows.
             // Treat missing health as pristine rather than allowing selection to throw.
@@ -119,7 +121,7 @@ class ServerPool(
 
     @Synchronized
     fun choose(role: ServerRole, nowMillis: Long = System.currentTimeMillis()): ServerDefinition {
-        val candidates = endpoints.filter { it.role == role }
+        val candidates = activeEndpoints().filter { it.role == role }
         require(candidates.isNotEmpty()) { "No servers configured for $role" }
         return candidates
             .filter { health.getValue(it.id).retryAt <= nowMillis }
@@ -153,7 +155,7 @@ class ServerPool(
         operation: (ServerDefinition) -> T,
     ): T {
         val candidates = synchronized(this) {
-            val eligible = endpoints.filter { it.role == role && health.getValue(it.id).retryAt <= nowMillis }
+            val eligible = activeEndpoints().filter { it.role == role && health.getValue(it.id).retryAt <= nowMillis }
             (if (eligible.isEmpty()) listOf(choose(role, nowMillis)) else eligible)
                 .sortedWith(
                     compareBy<ServerDefinition> { it.id != preferredServerId }
@@ -177,19 +179,23 @@ class ServerPool(
 
     @Synchronized
     fun replaceFromManifest(manifest: ServerManifest) {
+        require(manifest.expiresAtEpochSeconds > clockEpochSeconds()) { "Manifest has expired" }
         val manifestEndpoints = manifest.endpoints.distinctBy(ServerDefinition::id)
         require(manifestEndpoints.isNotEmpty()) { "Manifest contains no servers" }
-        val manifestRoles = manifestEndpoints.map(ServerDefinition::role).toSet()
-        // Older valid manifests predate the Mempool fiat role. Keep a bundled endpoint for any
-        // role omitted by the manifest, while manifest-provided roles remain authoritative.
-        endpoints.removeAll { !it.isCustom && it.role in manifestRoles }
-        endpoints.addAll(manifestEndpoints.filterNot(ServerDefinition::isCustom))
+        this.manifest = manifest
         manifestEndpoints.forEach { health.putIfAbsent(it.id, Health()) }
         persist()
     }
 
+    private fun activeEndpoints(): List<ServerDefinition> {
+        val valid = manifest?.takeIf { it.expiresAtEpochSeconds > clockEpochSeconds() } ?: return bundledEndpoints
+        val remote = valid.endpoints.filterNot(ServerDefinition::isCustom).distinctBy(ServerDefinition::id)
+        val roles = remote.map(ServerDefinition::role).toSet()
+        return bundledEndpoints.filter { it.isCustom || it.role !in roles } + remote
+    }
+
     @Synchronized fun snapshot(): ServerPoolSnapshot = ServerPoolSnapshot(
-        endpoints.toList(), health.map { (id, item) -> EndpointHealthSnapshot(id, item.failures, item.lastSuccess, item.retryAt) },
+        activeEndpoints(), health.map { (id, item) -> EndpointHealthSnapshot(id, item.failures, item.lastSuccess, item.retryAt) },
     )
 
     @Synchronized private fun persist() { stateStore?.save(snapshot()) }
@@ -299,20 +305,24 @@ object ServerManifestCodec {
 
 interface ServerManifestStore {
     fun load(): ServerManifest?
+    fun highestVersion(): Long?
     fun save(manifest: ServerManifest)
     fun clear()
 }
 
 class InMemoryServerManifestStore : ServerManifestStore {
     private var current: ServerManifest? = null
+    private var versionFloor: Long? = null
 
     override fun load(): ServerManifest? = current
+    override fun highestVersion(): Long? = versionFloor
 
     override fun save(manifest: ServerManifest) {
         current = manifest
+        versionFloor = maxOf(versionFloor ?: Long.MIN_VALUE, manifest.version)
     }
 
-    override fun clear() { current = null }
+    override fun clear() { current = null; versionFloor = null }
 }
 
 /** Small private-file stores for non-wallet directory state. Callers must delete them on erase. */
@@ -321,6 +331,12 @@ class FileServerManifestStore(
     private val trustedPublicKeyBase64: String,
     private val nowEpochSeconds: () -> Long,
 ) : ServerManifestStore {
+    override fun highestVersion(): Long? = runCatching {
+        if (!file.isFile) return null
+        Properties().also { file.inputStream().use(it::load) }
+            .getProperty("versionFloor")?.toLongOrNull()
+    }.getOrNull()
+
     override fun load(): ServerManifest? = runCatching {
         if (!file.isFile) return null
         val encoded = Properties().also { file.inputStream().use(it::load) }.getProperty("signed") ?: return null
@@ -330,7 +346,11 @@ class FileServerManifestStore(
     override fun save(manifest: ServerManifest) {
         val document = requireNotNull(manifest.signedJson) { "Only verified wire manifests can be persisted" }
         file.parentFile?.mkdirs()
-        val properties = Properties().apply { setProperty("signed", Base64.getEncoder().encodeToString(document.toByteArray(Charsets.UTF_8))) }
+        val previousFloor = highestVersion() ?: Long.MIN_VALUE
+        val properties = Properties().apply {
+            setProperty("signed", Base64.getEncoder().encodeToString(document.toByteArray(Charsets.UTF_8)))
+            setProperty("versionFloor", maxOf(previousFloor, manifest.version).toString())
+        }
         file.outputStream().use { properties.store(it, "Glance server manifest") }
     }
 
@@ -397,14 +417,15 @@ class ServerManifestRefresher(
             val url = manifestUrl.toHttpUrl()
             require(url.isHttps) { "Manifest URL must use TLS" }
             val request = Request.Builder().url(url).build()
-            val body = routeSource.current().okHttpClient().newBuilder()
-                .followRedirects(false).followSslRedirects(false).build().newCall(request).execute().use { response ->
+            val body = routeSource.executeHttp(request, client = {
+                it.okHttpClient().newBuilder().followRedirects(false).followSslRedirects(false).build()
+            }) { response ->
                 if (!response.isSuccessful) throw NetworkException("Server directory request failed (HTTP ${response.code})")
-                response.body?.string() ?: throw NetworkException("Server directory response body is empty")
+                response.readBodyLimited(256L * 1024)
             }
             val manifest = ServerManifestCodec.decodeAndVerify(body, trustedPublicKeyBase64, nowEpochSeconds)
-            val current = store.load()
-            if (current != null && manifest.version < current.version) throw InvalidServerManifestException("Manifest version is older than cached manifest")
+            val versionFloor = store.highestVersion()
+            if (versionFloor != null && manifest.version < versionFloor) throw InvalidServerManifestException("Manifest version is older than cached manifest")
             store.save(manifest)
             true
         } catch (_: Exception) {

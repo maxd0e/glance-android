@@ -11,15 +11,24 @@ import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicBoolean
+import java.io.StringReader
+import java.io.BufferedReader
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 
 class BlockchainClientTest {
+    @Test
+    fun `Electrum line reader rejects a response beyond its budget`() {
+        val reader = BufferedReader(StringReader("x".repeat(33) + "\n"))
+        assertThrows(NetworkException::class.java) { readBoundedLine(reader, 32) }
+    }
+
     @Test
     fun `Esplora transaction detail preserves ordered inputs outputs and addressless entries`() {
         MockWebServer().use { server ->

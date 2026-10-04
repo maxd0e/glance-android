@@ -5,6 +5,15 @@ import org.junit.Test
 
 class AuthenticationPolicyTest {
     @Test
+    fun `retry counter saturates and malformed negative state cannot shorten delay`() {
+        val policy = AuthenticationPolicy(RetryState(Int.MAX_VALUE, 0))
+        val capped = policy.recordFailure(1_000L)
+        org.junit.Assert.assertEquals(Int.MAX_VALUE, capped.failedAttempts)
+        org.junit.Assert.assertEquals(301_000L, capped.nextAllowedAtMillis)
+        policy.restore(RetryState(-1, 0))
+        org.junit.Assert.assertEquals(1, policy.recordFailure(1_000L).failedAttempts)
+    }
+    @Test
     fun `fifth failed attempt applies the first retry delay`() {
         val policy = AuthenticationPolicy()
 

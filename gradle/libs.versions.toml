@@ -31,7 +31,7 @@ serializationJson = "1.8.1"
 
 # --- Persistence (core-data) ---
 room = "2.8.4"
-sqlcipherAndroid = "4.7.2"
+sqlcipherAndroid = "4.9.0"
 androidxSqlite = "2.5.0"
 
 # --- Security (core-security) ---

@@ -85,12 +85,15 @@ class SecurityPreferencesStore private constructor(
     suspend fun wipe() {
         sharedStore.mutex.withLock {
             sharedStore.holder.value.scope.coroutineContext[Job]?.cancelAndJoin()
-            context.applicationContext.dataStoreFile(identity.fileName).delete()
-            context.applicationContext
+            val payload = context.applicationContext.dataStoreFile(identity.fileName)
+            check(!payload.exists() || payload.delete()) { "Unable to delete encrypted preferences." }
+            check(!payload.exists()) { "Encrypted preferences remain after deletion." }
+            val committed = context.applicationContext
                 .getSharedPreferences(identity.keysetPreferenceFile, Context.MODE_PRIVATE)
                 .edit()
                 .clear()
                 .commit()
+            check(committed) { "Unable to delete encrypted preference keyset." }
             KeyStore.getInstance("AndroidKeyStore").apply {
                 load(null)
                 deleteEntry(identity.masterKeyAlias)
@@ -125,12 +128,23 @@ class SecurityPreferencesStore private constructor(
         private fun aead(context: Context, identity: StorageIdentity): Aead {
             // AndroidKeysetManager creates the first keyset eagerly, so register before it builds.
             AeadConfig.register()
-            val handle = AndroidKeysetManager.Builder()
+            val manager = AndroidKeysetManager.Builder()
                 .withSharedPref(context.applicationContext, identity.keysetName, identity.keysetPreferenceFile)
                 .withKeyTemplate(KeyTemplate.createFrom(PredefinedAeadParameters.AES256_GCM))
                 .withMasterKeyUri("android-keystore://${identity.masterKeyAlias}")
                 .build()
-                .keysetHandle
+            if (!manager.isUsingKeystore) {
+                val removed = context.applicationContext
+                    .getSharedPreferences(identity.keysetPreferenceFile, Context.MODE_PRIVATE)
+                    .edit().remove(identity.keysetName).commit()
+                check(removed) { "Secure settings storage is unavailable." }
+                KeyStore.getInstance("AndroidKeyStore").apply {
+                    load(null)
+                    if (containsAlias(identity.masterKeyAlias)) deleteEntry(identity.masterKeyAlias)
+                }
+                throw IllegalStateException("Secure settings storage is unavailable.")
+            }
+            val handle = manager.keysetHandle
             return handle.getPrimitive(RegistryConfiguration.get(), Aead::class.java)
         }
 

@@ -1,6 +1,5 @@
 package app.glance.wallet
 
-import fr.acinq.bitcoin.DeterministicWallet
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -57,14 +56,6 @@ class QrWatchedKeyScanTest {
         )
     }
 
-    private fun generatedXpub(): String = DeterministicWallet.generate(ByteArray(32) { it.toByte() })
-        .derivePrivateKey(
-            listOf(
-                DeterministicWallet.hardened(84),
-                DeterministicWallet.hardened(0),
-                DeterministicWallet.hardened(0),
-            ),
-        )
-        .extendedPublicKey
-        .encode(DeterministicWallet.xpub)
+    private fun generatedXpub(): String =
+        "xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz"
 }

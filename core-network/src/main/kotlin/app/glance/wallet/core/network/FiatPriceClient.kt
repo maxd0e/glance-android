@@ -90,13 +90,14 @@ class MempoolFiatPriceClient(
     private fun get(path: String, configure: okhttp3.HttpUrl.Builder.() -> Unit = {}): String =
         execute(baseUrl.newBuilder().addPathSegments(path).apply(configure).build())
 
-    private fun execute(url: okhttp3.HttpUrl): String = clientFactorySource.current().okHttpClient().newCall(Request.Builder().url(url).build()).execute().use { response ->
+    private fun execute(url: okhttp3.HttpUrl): String = clientFactorySource.executeHttp(Request.Builder().url(url).build()) { response ->
         if (!response.isSuccessful) throw NetworkException("Fiat provider request failed (HTTP ${response.code})")
-        response.body?.string() ?: throw NetworkException("Fiat provider response body is empty")
+        response.readBodyLimited(MAX_BODY_BYTES)
     }
 
     companion object {
         val SUPPORTED_CURRENCIES = setOf("USD", "EUR", "GBP", "CAD", "CHF", "AUD", "JPY")
+        private const val MAX_BODY_BYTES = 1024L * 1024
     }
 }
 

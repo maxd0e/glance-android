@@ -204,15 +204,15 @@ class ElectrumBlockchainClient(private val transport: ElectrumTransport) : Block
         val history = transport.request("blockchain.scripthash.get_history", listOf(scriptHash)).jsonArray.map { entry ->
             val item = entry.jsonObject
             val height = item.requiredInt("height").takeIf { it > 0 }
-            AddressTransaction(item.requiredString("tx_hash"), height, confirmations(tip, height))
+            AddressTransaction(item.requiredTxid("tx_hash"), height, confirmations(tip, height))
         }
         val utxos = transport.request("blockchain.scripthash.listunspent", listOf(scriptHash)).jsonArray.map { entry ->
             val item = entry.jsonObject
             val height = item.requiredInt("height").takeIf { it > 0 }
-            NetworkUtxo(item.requiredString("tx_hash"), item.requiredInt("tx_pos"), item.requiredLong("value"), confirmations(tip, height), height)
+            NetworkUtxo(item.requiredTxid("tx_hash"), item.requiredInt("tx_pos"), item.requiredSats("value"), confirmations(tip, height), height)
         }
         return AddressSnapshot(
-            AddressBalance(balance.requiredLong("confirmed"), balance.requiredLong("unconfirmed")),
+            AddressBalance(balance.requiredSats("confirmed", allowNegative = true), balance.requiredSats("unconfirmed", allowNegative = true)),
             history,
             utxos,
             tip,
@@ -227,9 +227,9 @@ class ElectrumBlockchainClient(private val transport: ElectrumTransport) : Block
         val utxos = transport.request("blockchain.scripthash.listunspent", listOf(scriptHash)).jsonArray.map { entry ->
             val item = entry.jsonObject
             val height = item.requiredInt("height").takeIf { it > 0 }
-            NetworkUtxo(item.requiredString("tx_hash"), item.requiredInt("tx_pos"), item.requiredLong("value"), confirmations(tip, height), height)
+            NetworkUtxo(item.requiredTxid("tx_hash"), item.requiredInt("tx_pos"), item.requiredSats("value"), confirmations(tip, height), height)
         }
-        return AddressSnapshot(AddressBalance(balance.requiredLong("confirmed"), balance.requiredLong("unconfirmed")), emptyList(), utxos, tip, hasSignedHistoryDeltas = false)
+        return AddressSnapshot(AddressBalance(balance.requiredSats("confirmed", allowNegative = true), balance.requiredSats("unconfirmed", allowNegative = true)), emptyList(), utxos, tip, hasSignedHistoryDeltas = false)
     }
 
     override fun tipHeight(): Int =
@@ -251,12 +251,15 @@ class SocketElectrumTransport(
     private var socket: Socket? = null
     private var reader: BufferedReader? = null
     private var writer: BufferedWriter? = null
+    private var connectedLease: NetworkLease? = null
+    private var socketRegistration: AutoCloseable? = null
     private var nextId = 1L
 
     override fun request(method: String, params: List<String>): JsonElement {
         val id = nextId++
         ensureConnected()
         return try {
+            connectedLease!!.checkActive()
             writer!!.apply { write(payload(id, method, params).toString()); newLine(); flush() }
             readResults(setOf(id)).getValue(id)
         } catch (exception: NetworkException) {
@@ -276,6 +279,7 @@ class SocketElectrumTransport(
             val batch = buildJsonArray {
                 requests.zip(ids).forEach { (request, id) -> add(payload(id, request.method, request.params)) }
             }
+            connectedLease!!.checkActive()
             writer!!.apply { write(batch.toString()); newLine(); flush() }
             val results = readResults(ids.toSet())
             ids.map { results.getValue(it) }
@@ -296,8 +300,16 @@ class SocketElectrumTransport(
 
     private fun readResults(expectedIds: Set<Long>): Map<Long, JsonElement> {
         val results = mutableMapOf<Long, JsonElement>()
+        var frames = 0
+        val deadlineNanos = System.nanoTime() + RESPONSE_DEADLINE_NANOS
         while (results.keys != expectedIds) {
-            val line = reader!!.readLine() ?: throw NetworkException("Electrum connection closed")
+            if (++frames > MAX_RESPONSE_FRAMES) throw NetworkException("Electrum response limit exceeded")
+            val remainingMillis = (deadlineNanos - System.nanoTime()) / 1_000_000
+            if (remainingMillis <= 0) throw NetworkException("Electrum response timed out")
+            socket!!.soTimeout = minOf(connectTimeoutMillis, remainingMillis.coerceAtLeast(1).toInt())
+            val line = readBoundedLine(reader!!, MAX_LINE_CHARS)
+                ?: throw NetworkException("Electrum connection closed")
+            connectedLease!!.checkActive()
             val payload = kotlinx.serialization.json.Json.parseToJsonElement(line)
             val responses = if (payload is JsonArray) payload else listOf(payload)
             responses.forEach { element ->
@@ -314,10 +326,20 @@ class SocketElectrumTransport(
     }
 
     private fun ensureConnected() {
-        if (socket?.isConnected == true && socket?.isClosed == false) return
+        val lease = clientFactorySource.acquire()
+        if (socket?.isConnected == true && socket?.isClosed == false) {
+            if (connectedLease?.factory?.route == lease.factory.route) {
+                connectedLease?.checkActive()
+                return
+            }
+            close()
+        }
         try {
-            val rawSocket = clientFactorySource.current().socket().apply {
-                connect(electrumEndpointAddress(endpoint.host, endpoint.port), connectTimeoutMillis)
+            val rawSocket = lease.factory.socket().also { raw ->
+                socket = raw
+                socketRegistration = lease.register(raw::close)
+            }.apply {
+                connect(lease.factory.electrumAddress(endpoint.host, endpoint.port), connectTimeoutMillis)
             }
             socket = if (endpoint.useTls) {
                 ((SSLSocketFactory.getDefault() as SSLSocketFactory)
@@ -329,6 +351,8 @@ class SocketElectrumTransport(
             }.apply { soTimeout = connectTimeoutMillis }
             reader = BufferedReader(InputStreamReader(socket!!.getInputStream(), Charsets.UTF_8))
             writer = BufferedWriter(OutputStreamWriter(socket!!.getOutputStream(), Charsets.UTF_8))
+            connectedLease = lease
+            lease.checkActive()
         } catch (_: Exception) {
             close()
             throw NetworkException("Electrum connection failed")
@@ -336,10 +360,32 @@ class SocketElectrumTransport(
     }
 
     override fun close() {
+        runCatching { socketRegistration?.close() }
+        socketRegistration = null
         runCatching { socket?.close() }
         socket = null
         reader = null
         writer = null
+        connectedLease = null
+    }
+
+    private companion object {
+        const val MAX_LINE_CHARS = 256 * 1024
+        const val MAX_RESPONSE_FRAMES = 256
+        const val RESPONSE_DEADLINE_NANOS = 30L * 1_000_000_000
+    }
+}
+
+internal fun readBoundedLine(reader: BufferedReader, maxChars: Int): String? {
+    val result = StringBuilder(minOf(maxChars, 8_192))
+    while (true) {
+        val value = reader.read()
+        if (value == -1) return result.takeIf { it.isNotEmpty() }?.toString()
+        if (value == '\n'.code) return result.toString()
+        if (value != '\r'.code) {
+            if (result.length == maxChars) throw NetworkException("Electrum response is too large")
+            result.append(value.toChar())
+        }
     }
 }
 
@@ -401,7 +447,7 @@ class EsploraBlockchainClient(
             val item = entry.jsonObject
             val status = item["status"]?.jsonObject ?: throw NetworkException("Invalid UTXO response")
             val height = status["block_height"]?.jsonPrimitive?.content?.toIntOrNull()
-            NetworkUtxo(item.requiredString("txid"), item.requiredInt("vout"), item.requiredLong("value"), confirmations(tip, height), height)
+            NetworkUtxo(item.requiredTxid("txid"), item.requiredInt("vout"), item.requiredSats("value"), confirmations(tip, height), height)
         }
         return AddressSnapshot(AddressBalance(confirmed, unconfirmed), emptyList(), utxos, tip)
     }
@@ -415,11 +461,11 @@ class EsploraBlockchainClient(
         val transactions = page.map { tx ->
             val status = tx["status"]?.jsonObject ?: throw NetworkException("Invalid transaction response")
             val height = status["block_height"]?.jsonPrimitive?.content?.toIntOrNull()
-            AddressTransaction(tx.requiredString("txid"), height, confirmations(tip, height), tx.netValueFor(address))
+            AddressTransaction(tx.requiredTxid("txid"), height, confirmations(tip, height), tx.netValueFor(address))
         }
         return AddressHistoryPage(
             transactions = transactions,
-            nextCursor = page.lastOrNull()?.requiredString("txid").takeIf { page.size >= ESPLORA_HISTORY_MIN_PAGE_SIZE },
+            nextCursor = page.lastOrNull()?.requiredTxid("txid").takeIf { page.size >= ESPLORA_HISTORY_MIN_PAGE_SIZE },
             isComplete = page.size < ESPLORA_HISTORY_MIN_PAGE_SIZE,
         )
     }
@@ -430,11 +476,13 @@ class EsploraBlockchainClient(
             val input = element.jsonObject
             val coinbase = input["is_coinbase"]?.jsonPrimitive?.content == "true" || input.containsKey("coinbase")
             val previous = input["prevout"]?.jsonObject
-            TransactionIo(index, previous?.get("scriptpubkey_address")?.jsonPrimitive?.content, previous?.get("value")?.jsonPrimitive?.longOrNull ?: 0L, coinbase)
+            val value = previous?.get("value")?.jsonPrimitive?.longOrNull ?: 0L
+            if (value !in 0..MAX_BITCOIN_SATS) throw NetworkException("Invalid provider response")
+            TransactionIo(index, previous?.get("scriptpubkey_address")?.jsonPrimitive?.content, value, coinbase)
         }
         val outputs = transaction["vout"]?.jsonArray.orEmpty().mapIndexed { index, element ->
             val output = element.jsonObject
-            TransactionIo(index, output["scriptpubkey_address"]?.jsonPrimitive?.content, output.requiredLong("value"))
+            TransactionIo(index, output["scriptpubkey_address"]?.jsonPrimitive?.content, output.requiredSats("value"))
         }
         return NetworkTransactionDetail(txid, inputs, outputs)
     }
@@ -462,11 +510,11 @@ class EsploraBlockchainClient(
     private fun JsonObject.netValueFor(address: String): Long {
         val received = this["vout"]?.jsonArray.orEmpty().sumOf { output ->
             val entry = output.jsonObject
-            if (entry["scriptpubkey_address"]?.jsonPrimitive?.content == address) entry.requiredLong("value") else 0L
+            if (entry["scriptpubkey_address"]?.jsonPrimitive?.content == address) entry.requiredSats("value") else 0L
         }
         val spent = this["vin"]?.jsonArray.orEmpty().sumOf { input ->
             val previous = input.jsonObject["prevout"]?.jsonObject ?: return@sumOf 0L
-            if (previous["scriptpubkey_address"]?.jsonPrimitive?.content == address) previous.requiredLong("value") else 0L
+            if (previous["scriptpubkey_address"]?.jsonPrimitive?.content == address) previous.requiredSats("value") else 0L
         }
         return received - spent
     }
@@ -475,13 +523,14 @@ class EsploraBlockchainClient(
 
     private fun get(path: String): String {
         val url = baseUrl.resolve(path) ?: throw NetworkException("Invalid request")
-        return clientFactorySource.current().okHttpClient().newCall(Request.Builder().url(url).build()).execute().use { response ->
+        return clientFactorySource.executeHttp(Request.Builder().url(url).build()) { response ->
             if (!response.isSuccessful) throw NetworkException("Blockchain request failed (HTTP ${response.code})")
-            response.body?.string() ?: throw NetworkException("Blockchain response body is empty")
+            response.readBodyLimited(MAX_HTTP_BODY_BYTES)
         }
     }
 
     private companion object {
+        const val MAX_HTTP_BODY_BYTES = 2L * 1024 * 1024
         /** Public Esplora APIs do not offer a batch status endpoint; keep fallback pressure modest. */
         const val ESPLORA_STATUS_PARALLELISM = 4
         /** Public Esplora deployments return either 25 or 50 transactions per full page. */
@@ -533,5 +582,16 @@ private fun JsonObject.requiredString(name: String): String =
 private fun JsonObject.requiredLong(name: String): Long =
     requiredString(name).toLongOrNull() ?: throw NetworkException("Invalid provider response")
 
+private fun JsonObject.requiredSats(name: String, allowNegative: Boolean = false): Long =
+    requiredLong(name).takeIf { value ->
+        value <= MAX_BITCOIN_SATS && (allowNegative && value >= -MAX_BITCOIN_SATS || !allowNegative && value >= 0)
+    } ?: throw NetworkException("Invalid provider response")
+
+private fun JsonObject.requiredTxid(name: String): String =
+    requiredString(name).takeIf { it.length == 64 && it.all { character -> character.digitToIntOrNull(16) != null } }
+        ?: throw NetworkException("Invalid provider response")
+
 private fun JsonObject.requiredInt(name: String): Int =
     requiredString(name).toIntOrNull() ?: throw NetworkException("Invalid provider response")
+
+private const val MAX_BITCOIN_SATS = 2_100_000_000_000_000L

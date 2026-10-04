@@ -8,6 +8,7 @@ import app.glance.wallet.core.network.FileServerManifestStore
 import app.glance.wallet.core.network.FileServerPoolStateStore
 import app.glance.wallet.core.network.ServerManifestRefresher
 import app.glance.wallet.core.network.DirectNetworkClientFactorySource
+import app.glance.wallet.core.network.RevocableNetworkClientFactorySource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -33,6 +34,9 @@ class GlanceApplication : Application() {
     }
 
     val torController: TorController by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { TorController(this) }
+    private val networkSessionRoutes: RevocableNetworkClientFactorySource by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        RevocableNetworkClientFactorySource(if (BuildConfig.REGTEST) DirectNetworkClientFactorySource else torController)
+    }
 
     val serverPool: ServerPool by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         if (BuildConfig.REGTEST) regtestServerPool()
@@ -41,7 +45,7 @@ class GlanceApplication : Application() {
 
     val networkClients: NetworkClients by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         NetworkClients(
-            routeSource = if (BuildConfig.REGTEST) DirectNetworkClientFactorySource else torController,
+            routeSource = networkSessionRoutes,
             serverPool = serverPool,
             electrumOnly = BuildConfig.REGTEST,
         )
@@ -49,7 +53,12 @@ class GlanceApplication : Application() {
 
     /** Starts privacy-sensitive network services only for an authenticated real-wallet session. */
     fun setNetworkSessionActive(active: Boolean, torEnabled: Boolean, offlineMode: Boolean = false) {
-        if (BuildConfig.REGTEST) return
+        if (BuildConfig.REGTEST) {
+            if (active && !offlineMode) networkSessionRoutes.activate() else networkSessionRoutes.revoke()
+            return
+        }
+        networkSessionRoutes.revoke()
+        if (active && !offlineMode) networkSessionRoutes.activate()
         if (active && !offlineMode && (serverDirectoryJob == null || activeTorEnabled != torEnabled)) {
             serverDirectoryJob?.cancel()
             networkShutdownJob?.cancel()
@@ -69,8 +78,10 @@ class GlanceApplication : Application() {
     }
 
     /** A duress profile may reconcile only through Tor and never refresh the server directory. */
-    fun setDuressNetworkSessionActive(active: Boolean) {
-        if (active) {
+    fun setDuressNetworkSessionActive(active: Boolean, offlineMode: Boolean) {
+        networkSessionRoutes.revoke()
+        if (duressNetworkAllowed(active, offlineMode)) {
+            networkSessionRoutes.activate()
             networkShutdownJob?.cancel()
             networkShutdownJob = null
             serverDirectoryJob?.cancel()
@@ -82,7 +93,9 @@ class GlanceApplication : Application() {
         } else {
             synchronized(syncCoordinators) { syncCoordinators.toList() }.forEach(WalletSyncCoordinator::cancel)
             networkShutdownJob?.cancel()
-            networkShutdownJob = applicationScope.launch { torController.stopForInactiveSession() }
+            networkShutdownJob = applicationScope.launch {
+                if (offlineMode) torController.setOffline(true) else torController.stopForInactiveSession()
+            }
         }
     }
 
@@ -90,12 +103,19 @@ class GlanceApplication : Application() {
     fun unregisterSyncCoordinator(coordinator: WalletSyncCoordinator) = synchronized(syncCoordinators) { syncCoordinators -= coordinator }
 
     fun renewTorConnection() {
+        networkSessionRoutes.revoke()
         synchronized(syncCoordinators) { syncCoordinators.toList() }.forEach(WalletSyncCoordinator::cancel)
-        applicationScope.launch { torController.renew() }
+        applicationScope.launch {
+            torController.renew()
+            networkSessionRoutes.activate()
+        }
     }
 
     fun setOfflineMode(enabled: Boolean) {
-        if (enabled) synchronized(syncCoordinators) { syncCoordinators.toList() }.forEach(WalletSyncCoordinator::cancel)
+        if (enabled) {
+            networkSessionRoutes.revoke()
+            synchronized(syncCoordinators) { syncCoordinators.toList() }.forEach(WalletSyncCoordinator::cancel)
+        }
         applicationScope.launch { torController.setOffline(enabled) }
     }
 
@@ -103,12 +123,13 @@ class GlanceApplication : Application() {
         torController.setOffline(false)
         torController.setEnabled(torEnabled)
         if (!torEnabled) return
+        if (ManifestTrust.PUBLIC_KEY_BASE64.isBlank()) return
         val store = FileServerManifestStore(
             NetworkStateFiles.manifest(this),
             ManifestTrust.PUBLIC_KEY_BASE64,
         ) { System.currentTimeMillis() / 1_000 }
         store.load()?.let { serverPool.replaceFromManifest(it) }
-        val refresher = ServerManifestRefresher(torController, store)
+        val refresher = ServerManifestRefresher(networkSessionRoutes, store)
         while (true) {
             if (torController.state.value is TorState.Ready) {
                 if (refresher.refresh(ManifestTrust.URL, ManifestTrust.PUBLIC_KEY_BASE64, System.currentTimeMillis() / 1_000)) {
@@ -120,8 +141,10 @@ class GlanceApplication : Application() {
     }
 }
 
+internal fun duressNetworkAllowed(active: Boolean, offlineMode: Boolean): Boolean = active && !offlineMode
+
 /** Ed25519 SubjectPublicKeyInfo for the directory signing key. The private key is never shipped. */
 internal object ManifestTrust {
     const val URL = "https://glancewallet.app/.well-known/glance-server-manifest.json"
-    const val PUBLIC_KEY_BASE64 = "MCowBQYDK2VwAyEA11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo="
+    val PUBLIC_KEY_BASE64: String = BuildConfig.DIRECTORY_PUBLIC_KEY_BASE64
 }

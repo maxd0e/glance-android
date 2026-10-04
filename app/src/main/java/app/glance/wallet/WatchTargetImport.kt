@@ -180,6 +180,10 @@ import kotlin.math.roundToInt
             placeholder = "bc1q..., zpub..., or descriptor",
             minLines = 2,
             modifier = Modifier.fillMaxWidth().testTag("watch_target_input"),
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                autoCorrectEnabled = false,
+                keyboardType = androidx.compose.ui.text.input.KeyboardType.Ascii,
+            ),
             trailingIcon = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = ::pasteFromClipboard) {

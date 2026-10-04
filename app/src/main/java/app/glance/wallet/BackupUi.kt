@@ -17,6 +17,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -103,5 +105,13 @@ internal fun BackupImportWalletAction(
 
 @Composable private fun PassphraseDialog(title: String, initial: String, confirmation: Boolean = false, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
     var passphrase by remember { mutableStateOf(initial) }; var confirm by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = { Column { Text("This passphrase cannot be recovered."); OutlinedTextField(passphrase, { passphrase = it }, label = { Text("Passphrase") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)); if (confirmation) OutlinedTextField(confirm, { confirm = it }, label = { Text("Confirm passphrase") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth()) } }, dismissButton = { Button(onClick = onDismiss) { Text("Cancel") } }, confirmButton = { Button(enabled = passphrase.isNotEmpty() && (!confirmation || passphrase == confirm), onClick = { onConfirm(passphrase) }) { Text(if (confirmation) "Export" else "Continue") } })
+    val passwordKeyboard = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Password)
+    val valid = if (confirmation) passphrase.length >= MIN_BACKUP_PASSPHRASE_LENGTH && passphrase == confirm else passphrase.isNotEmpty()
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = { Column {
+        Text(if (confirmation) "Use at least $MIN_BACKUP_PASSPHRASE_LENGTH characters. This passphrase cannot be recovered." else "Enter the backup passphrase.")
+        OutlinedTextField(passphrase, { passphrase = it }, label = { Text("Passphrase") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = passwordKeyboard, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+        if (confirmation) OutlinedTextField(confirm, { confirm = it }, label = { Text("Confirm passphrase") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = passwordKeyboard, modifier = Modifier.fillMaxWidth())
+    } }, dismissButton = { Button(onClick = onDismiss) { Text("Cancel") } }, confirmButton = { Button(enabled = valid, onClick = { onConfirm(passphrase) }) { Text(if (confirmation) "Export" else "Continue") } })
 }
+
+private const val MIN_BACKUP_PASSPHRASE_LENGTH = 12

@@ -120,7 +120,7 @@ class PersistenceOnDeviceTest {
     }
 
     @Test
-    fun transactionDetailIncludesTheSpecificAddressTimestampAndReactiveLabel() = runBlocking {
+    fun transactionDetailAggregatesAllWalletAddressesWithTimestampAndReactiveLabel() = runBlocking {
         val database = Room.inMemoryDatabaseBuilder(context, GlanceDatabase::class.java)
             .allowMainThreadQueries()
             .build()
@@ -138,14 +138,15 @@ class PersistenceOnDeviceTest {
         database.labelDao().upsert(LabelEntity(LabelReferenceType.TRANSACTION, "same-tx", "Lunch"))
 
         val rows = database.walletScreenDao().observeTransactionPage(key.id, limit = 20, offset = 0).first()
-        val detail = database.walletScreenDao().observeTransactionDetail(rows.first { it.addressId == secondAddressId }.historyId).first()
-        assertEquals(secondAddressId, detail?.addressId)
-        assertEquals("bc1qtestdetail1", detail?.address)
+        val detail = database.walletScreenDao().observeTransactionDetail(key.id, rows.single().txid).first()
+        assertEquals(300L, detail?.valueSats)
+        assertEquals(firstAddressId, detail?.addressId)
+        assertEquals("bc1qtestdetail0", detail?.address)
         assertEquals(1_700_000_000L, detail?.timestamp)
         assertEquals("Lunch", detail?.label)
 
         database.labelDao().delete(LabelReferenceType.TRANSACTION, "same-tx")
-        assertEquals(null, database.walletScreenDao().observeTransactionDetail(detail!!.historyId).first()?.label)
+        assertEquals(null, database.walletScreenDao().observeTransactionDetail(key.id, detail!!.txid).first()?.label)
         database.close()
     }
 

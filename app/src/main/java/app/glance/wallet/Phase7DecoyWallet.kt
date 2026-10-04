@@ -144,7 +144,7 @@ internal fun DecoyPhase7Wallet(session: ProfileSession, authentication: Authenti
         app.registerSyncCoordinator(syncCoordinator)
         onDispose { app.unregisterSyncCoordinator(syncCoordinator) }
     }
-    LaunchedEffect(torState) { syncCoordinator.requestSync(torEnabled = true, torState = torState, offlineMode = false) }
+    LaunchedEffect(torState, securitySettings.offlineMode) { syncCoordinator.requestSync(torEnabled = true, torState = torState, offlineMode = securitySettings.offlineMode) }
     val syncState by syncCoordinator.state.collectAsState()
     val keys by database.walletScreenDao().observeKeyBalances().collectAsState(emptyList())
     val balance by database.utxoDao().observeConfirmedBalance().collectAsState(0L)
@@ -176,7 +176,7 @@ internal fun DecoyPhase7Wallet(session: ProfileSession, authentication: Authenti
     }
     if (detail) {
         val key = keys.firstOrNull()
-        if (key != null) KeyDetailScreen(database, key.id, UtxoView.BUBBLES, syncState, onRefresh = { scope.launch { syncCoordinator.requestSync(true, torState) } }, onBack = { detail = false }, onTransaction = { transactionDetail = key.id to it }, onReceive = { receiveKeyId = key.id }) else detail = false
+        if (key != null) KeyDetailScreen(database, key.id, UtxoView.BUBBLES, syncState, onRefresh = { scope.launch { syncCoordinator.requestSync(true, torState, securitySettings.offlineMode) } }, onBack = { detail = false }, onTransaction = { transactionDetail = key.id to it }, onReceive = { receiveKeyId = key.id }) else detail = false
         return@CompositionLocalProvider
     }
     Scaffold(containerColor = GlanceBackground) { padding ->
@@ -189,7 +189,7 @@ internal fun DecoyPhase7Wallet(session: ProfileSession, authentication: Authenti
                 }
             }
             item { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { AmountText(balance, Modifier.testTag("decoy_balance"), large = true) } }
-            if (syncState != WalletSyncState.Succeeded) item { WalletSyncStatus(syncState) { scope.launch { syncCoordinator.requestSync(true, torState) } } }
+            if (syncState != WalletSyncState.Succeeded) item { WalletSyncStatus(syncState) { scope.launch { syncCoordinator.requestSync(true, torState, securitySettings.offlineMode) } } }
             item { Text("Watched keys", color = GlanceMuted, style = MaterialTheme.typography.labelMedium) }
             items(keys, key = { it.id }) { key ->
                 Surface(

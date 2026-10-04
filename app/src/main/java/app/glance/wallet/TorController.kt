@@ -174,9 +174,7 @@ class TorController(context: Context) : TorStateCleaner, NetworkClientFactorySou
         try {
             runtime.stopDaemonAsync()
         } catch (failure: Throwable) {
-            if (failure is CancellationException) throw failure
-        } finally {
-            // State is already fail-closed; a cancelled predecessor cannot overwrite a newer start.
+            throw failure
         }
     }
 

@@ -6,6 +6,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
 import android.view.HapticFeedbackConstants
 import android.view.WindowManager
 import androidx.activity.compose.LocalActivity
@@ -37,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
+import androidx.core.net.toUri
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.ViewModelProvider
 import app.glance.wallet.core.security.*
@@ -59,7 +61,31 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        preferences = (application as GlanceApplication).securityPreferences
+        preferences = try {
+            (application as GlanceApplication).securityPreferences
+        } catch (_: Exception) {
+            setContent {
+                GlanceTheme {
+                    Surface(Modifier.fillMaxSize(), color = GlanceBackground) {
+                        Column(
+                            Modifier.fillMaxSize().padding(24.dp),
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            Text("Secure storage unavailable", color = GlanceText, style = MaterialTheme.typography.headlineSmall)
+                            Text(
+                                "Glance cannot safely open its encrypted settings on this device. Clear the app's storage, then set it up again.",
+                                color = GlanceMuted,
+                                modifier = Modifier.padding(vertical = 16.dp),
+                            )
+                            Button(onClick = {
+                                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri()))
+                            }) { Text("Open app settings") }
+                        }
+                    }
+                }
+            }
+            return
+        }
         torController = (application as GlanceApplication).torController
         profiles = ProfileDatabaseManager(applicationContext)
         authentication = AuthenticationCoordinator(
@@ -116,10 +142,13 @@ class MainActivity : FragmentActivity() {
                 }
             }
             var initialTorBootstrap by remember { mutableStateOf(true) }
-            LaunchedEffect(settings?.torEnabled, settings?.offlineMode) {
+            LaunchedEffect(settings?.torEnabled, settings?.offlineMode, authState) {
                 val loadedSettings = settings ?: return@LaunchedEffect
                 torController.setOffline(loadedSettings.offlineMode)
-                if (!loadedSettings.offlineMode) torController.setEnabled(loadedSettings.torEnabled)
+                if (!loadedSettings.offlineMode) {
+                    val decoy = (authState as? AuthenticationState.Unlocked)?.session?.type == ProfileType.DECOY
+                    torController.setEnabled(decoy || loadedSettings.torEnabled)
+                }
             }
             LaunchedEffect(settings, torState) {
                 val loadedSettings = settings ?: return@LaunchedEffect
@@ -134,13 +163,15 @@ class MainActivity : FragmentActivity() {
                     initialTorBootstrap = false
                 }
             }
+            var wasUnlocked by remember { mutableStateOf(false) }
             LaunchedEffect(authState, settings?.torEnabled, settings?.offlineMode) {
                 val loadedSettings = settings ?: return@LaunchedEffect
                 when ((authState as? AuthenticationState.Unlocked)?.session?.type) {
                     ProfileType.REAL -> (application as GlanceApplication).setNetworkSessionActive(true, loadedSettings.torEnabled, loadedSettings.offlineMode)
-                    ProfileType.DECOY -> (application as GlanceApplication).setDuressNetworkSessionActive(true)
-                    null -> Unit // Pre-PIN Tor bootstrap is intentionally kept alive; no network work is scheduled.
+                    ProfileType.DECOY -> (application as GlanceApplication).setDuressNetworkSessionActive(true, loadedSettings.offlineMode)
+                    null -> if (wasUnlocked) (application as GlanceApplication).setNetworkSessionActive(false, loadedSettings.torEnabled, loadedSettings.offlineMode)
                 }
+                wasUnlocked = authState is AuthenticationState.Unlocked
             }
             LaunchedEffect(settings?.stealthMode) {
                 settings?.let { applyLauncherIdentity(applicationContext, it.stealthMode) }

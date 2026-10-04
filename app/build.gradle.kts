@@ -1,3 +1,6 @@
+import java.security.KeyFactory
+import java.security.spec.X509EncodedKeySpec
+import java.util.Base64
 import java.util.zip.ZipFile
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
@@ -13,6 +16,7 @@ abstract class VerifyReleaseConfiguration : DefaultTask() {
     @get:Input abstract val keyPassword: Property<String>
     @get:Input abstract val donationOnChain: Property<String>
     @get:Input abstract val donationLightning: Property<String>
+    @get:Input abstract val directoryPublicKey: Property<String>
 
     @TaskAction
     fun verify() {
@@ -31,6 +35,16 @@ abstract class VerifyReleaseConfiguration : DefaultTask() {
         check(!donationLightning.get().contains("placeholder", ignoreCase = true)) {
             "GLANCE_DONATION_LIGHTNING must be a real public Lightning invoice or address."
         }
+        check(directoryPublicKey.get().isNotBlank()) {
+            "GLANCE_DIRECTORY_PUBLIC_KEY_BASE64 must contain the production Ed25519 public key."
+        }
+        check(directoryPublicKey.get() != "MCowBQYDK2VwAyEA11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=") {
+            "The published RFC 8032 test key cannot be used for a release."
+        }
+        runCatching {
+            val encoded = Base64.getDecoder().decode(directoryPublicKey.get())
+            KeyFactory.getInstance("Ed25519").generatePublic(X509EncodedKeySpec(encoded))
+        }.getOrElse { error("GLANCE_DIRECTORY_PUBLIC_KEY_BASE64 is not a valid Ed25519 public key.") }
     }
 }
 
@@ -60,6 +74,7 @@ val configuredDonationOnChain = providers.environmentVariable("GLANCE_DONATION_O
     ?: "bc1qglanceplaceholderdonation"
 val configuredDonationLightning = providers.environmentVariable("GLANCE_DONATION_LIGHTNING").orNull
     ?: "glance@wallet.cash"
+val directoryPublicKeyBase64 = providers.environmentVariable("GLANCE_DIRECTORY_PUBLIC_KEY_BASE64").orNull.orEmpty()
 val releaseStoreFile = providers.environmentVariable("GLANCE_RELEASE_STORE_FILE").orNull
 val releaseStorePassword = providers.environmentVariable("GLANCE_RELEASE_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("GLANCE_RELEASE_KEY_ALIAS").orNull
@@ -73,6 +88,10 @@ plugins {
     alias(libs.plugins.compose.compiler)
 }
 
+configurations.matching { it.name.endsWith("UnitTestRuntimeClasspath") }.configureEach {
+    exclude(group = "fr.acinq.secp256k1", module = "secp256k1-kmp-jni-android")
+}
+
 android {
     namespace = "app.glance.wallet"
     compileSdk = libs.versions.compileSdk.get().toInt()
@@ -81,10 +100,11 @@ android {
         applicationId = "app.glance.wallet"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 13
-        versionName = providers.gradleProperty("glanceVersionName").orElse("0.1.0-beta.13").get()
+        versionCode = 14
+        versionName = providers.gradleProperty("glanceVersionName").orElse("0.1.0-beta.14").get()
         buildConfigField("String", "DONATION_ON_CHAIN", configuredDonationOnChain.asBuildConfigString())
         buildConfigField("String", "DONATION_LIGHTNING", configuredDonationLightning.asBuildConfigString())
+        buildConfigField("String", "DIRECTORY_PUBLIC_KEY_BASE64", directoryPublicKeyBase64.asBuildConfigString())
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         if (!liveAddress.isNullOrBlank()) {
@@ -224,6 +244,7 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.acinq.bitcoin.kmp)
+    testRuntimeOnly(libs.acinq.secp256k1.jni.jvm)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
@@ -284,6 +305,7 @@ tasks.register<VerifyReleaseConfiguration>("verifyReleaseConfiguration") {
     keyPassword.set(releaseKeyPassword ?: "")
     this.donationOnChain.set(configuredDonationOnChain)
     this.donationLightning.set(configuredDonationLightning)
+    this.directoryPublicKey.set(directoryPublicKeyBase64)
 }
 
 tasks.named("check").configure { dependsOn("verifyReleaseLoggingStripped") }

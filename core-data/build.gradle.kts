@@ -30,5 +30,6 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.acinq.bitcoin.kmp)
+    testRuntimeOnly(libs.acinq.secp256k1.jni.jvm)
     androidTestImplementation(libs.androidx.junit)
 }

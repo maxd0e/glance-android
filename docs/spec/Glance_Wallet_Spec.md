@@ -124,6 +124,7 @@ When Tor is enabled, fiat requests use Mempool's fixed onion API over the bundle
 ### 6.3 Stealth Mode
 One optional disguise, switchable via `<activity-alias>` (swaps launcher icon + label without reinstalling):
 - **Calculator:** a genuinely functional basic calculator. Tapping `=` five times consecutively (`=====`) opens Glance.
+- This disguise is not an authentication or forensic boundary. Package inspection or an explicit launch of the exported main activity can reveal the Glance PIN surface; access still depends on authentication.
 
 ### 6.4 Street Mode
 - Masks BTC/fiat balances (e.g., `•••• sats`) and, when active, also hides the balance chart's **y-axis values** (the line shape still renders, but no numbers are legible).
@@ -131,6 +132,7 @@ One optional disguise, switchable via `<activity-alias>` (swaps launcher icon + 
 - State persists (encrypted prefs) across app restarts/reboots until shaken again or toggled off in settings.
 
 ### 6.5 Screenshot Blocking
+- Disabling screenshot blocking intentionally permits screenshots and may expose sensitive screens through platform recents behavior. PIN, mnemonic, and passphrase values held as JVM strings cannot be reliably zeroized after use.
 - `FLAG_SECURE` set **by default ON** — toggleable in settings.
 
 ### 6.6 Data-at-Rest & Logging
@@ -143,7 +145,7 @@ One optional disguise, switchable via `<activity-alias>` (swaps launcher icon + 
 ### 6.7 Tor
 - Bundled in the app (no Orbot dependency) via `05nelsonm/kmp-tor`, exposing a local SOCKS proxy that all network clients route through.
 - Settings toggle, default **on**. Turning it off shows an explicit warning that the querying server will see the device's real IP.
-- An Electrum hostname must be passed to the SOCKS socket unresolved so Tor, rather than the device resolver, performs DNS. On an initial cold launch, when Tor is enabled, bootstrap begins before the PIN/setup screen and that screen remains behind an establishing-Tor gate while startup is pending. If startup fails, PIN/setup may proceed but every app network path remains blocked until Tor becomes ready or the user explicitly confirms the persisted direct-mode opt-out. Later renewals, retries, and foreground reconnects keep the active screen visible and report the inline/menu `Connecting to Tor` state instead. Signed-directory refresh begins only after a real-profile unlock; a duress unlock immediately stops the pre-started daemon and never makes network requests.
+- An Electrum hostname must be passed to the SOCKS socket unresolved so Tor, rather than the device resolver, performs DNS. On an initial cold launch, when Tor is enabled, bootstrap begins before the PIN/setup screen and that screen remains behind an establishing-Tor gate while startup is pending. If startup fails, PIN/setup may proceed but every app network path remains blocked until Tor becomes ready or the user explicitly confirms the persisted direct-mode opt-out. Later renewals, retries, and foreground reconnects keep the active screen visible and report the inline/menu `Connecting to Tor` state instead. Signed-directory refresh begins only after a real-profile unlock. A duress unlock may synchronize only the isolated decoy wallet through Tor when offline mode is off; it makes no directory or fiat requests and never uses direct routing. Offline mode prevents even Tor bootstrap and all decoy requests.
 - Backgrounding or locking cancels active wallet sync work and stops the Tor daemon without enabling direct traffic. Direct clients are available only after the persisted, explicitly confirmed Tor opt-out; cancellation is checked between sync batches.
 - **Offline mode** is an independent persisted, default-off kill switch in the Home connection menu. Its persisted value is loaded before any bootstrap; it stops or preempts Tor startup and rejects every Glance Electrum, Esplora, fiat, and directory request while retaining cached data. It bypasses pre-PIN Tor bootstrap; turning it off restores the separately persisted Tor/direct policy.
 - The Home connection menu reports semantic status only (connected, connecting, unavailable, offline, or direct). It must not display or fetch an IP address: the local SOCKS address is not useful, and checking a Tor exit IP adds an unnecessary external request and a changing, correlatable identifier.
