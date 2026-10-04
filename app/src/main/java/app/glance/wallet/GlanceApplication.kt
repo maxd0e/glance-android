@@ -7,6 +7,7 @@ import app.glance.wallet.core.network.ServerPool
 import app.glance.wallet.core.network.FileServerManifestStore
 import app.glance.wallet.core.network.FileServerPoolStateStore
 import app.glance.wallet.core.network.ServerManifestRefresher
+import app.glance.wallet.core.network.DirectNetworkClientFactorySource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,13 +35,21 @@ class GlanceApplication : Application() {
     val torController: TorController by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { TorController(this) }
 
     val serverPool: ServerPool by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        ServerPool.bootstrap(FileServerPoolStateStore(NetworkStateFiles.poolState(this)))
+        if (BuildConfig.REGTEST) regtestServerPool()
+        else ServerPool.bootstrap(FileServerPoolStateStore(NetworkStateFiles.poolState(this)))
     }
 
-    val networkClients: NetworkClients by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { NetworkClients(torController, serverPool) }
+    val networkClients: NetworkClients by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        NetworkClients(
+            routeSource = if (BuildConfig.REGTEST) DirectNetworkClientFactorySource else torController,
+            serverPool = serverPool,
+            electrumOnly = BuildConfig.REGTEST,
+        )
+    }
 
     /** Starts privacy-sensitive network services only for an authenticated real-wallet session. */
     fun setNetworkSessionActive(active: Boolean, torEnabled: Boolean, offlineMode: Boolean = false) {
+        if (BuildConfig.REGTEST) return
         if (active && !offlineMode && (serverDirectoryJob == null || activeTorEnabled != torEnabled)) {
             serverDirectoryJob?.cancel()
             networkShutdownJob?.cancel()

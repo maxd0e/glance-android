@@ -1,7 +1,9 @@
 import java.util.zip.ZipFile
 import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.TaskAction
 
 abstract class VerifyReleaseConfiguration : DefaultTask() {
@@ -29,6 +31,21 @@ abstract class VerifyReleaseConfiguration : DefaultTask() {
         check(!donationLightning.get().contains("placeholder", ignoreCase = true)) {
             "GLANCE_DONATION_LIGHTNING must be a real public Lightning invoice or address."
         }
+    }
+}
+
+abstract class VerifyRegtestBuildBoundary : DefaultTask() {
+    @get:InputDirectory
+    abstract val buildConfigDirectory: DirectoryProperty
+
+    @TaskAction
+    fun verify() {
+        val buildConfig = buildConfigDirectory.get().asFile.walkTopDown()
+            .firstOrNull { it.name == "BuildConfig.java" }
+            ?: error("Regtest BuildConfig was not generated.")
+        val source = buildConfig.readText()
+        check("REGTEST = true" in source) { "Regtest build must be explicitly marked." }
+        check("app.glance.wallet.regtest" in source) { "Regtest build must use an isolated application ID." }
     }
 }
 
@@ -96,7 +113,18 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("boolean", "REGTEST", "false")
+        }
+        create("regtest") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".regtest"
+            versionNameSuffix = "-regtest"
+            buildConfigField("boolean", "REGTEST", "true")
+            matchingFallbacks += listOf("debug")
+        }
         release {
+            buildConfigField("boolean", "REGTEST", "false")
             optimization {
                 enable = true
             }
@@ -209,6 +237,14 @@ dependencies {
 }
 
 val releaseApkDirectory = layout.buildDirectory.dir("outputs/apk/release")
+val regtestBuildConfigDirectory = layout.buildDirectory.dir("generated/source/buildConfig/regtest")
+
+tasks.register<VerifyRegtestBuildBoundary>("verifyRegtestBuildBoundary") {
+    group = "verification"
+    description = "Proves the opt-in regtest build is isolated from production application IDs."
+    dependsOn("generateRegtestBuildConfig")
+    buildConfigDirectory.set(regtestBuildConfigDirectory)
+}
 
 tasks.register("verifyReleaseLoggingStripped") {
     group = "verification"

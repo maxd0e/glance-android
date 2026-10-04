@@ -20,6 +20,7 @@ import app.glance.wallet.core.data.sync.XpubFormatDiscovery
 class NetworkClients(
     private val routeSource: NetworkClientFactorySource,
     private val serverPool: ServerPool? = null,
+    private val electrumOnly: Boolean = false,
 ) {
     fun electrum(endpoint: NetworkEndpoint): ElectrumBlockchainClient =
         ElectrumBlockchainClient(SocketElectrumTransport(endpoint, clientFactorySource = routeSource))
@@ -47,6 +48,16 @@ class NetworkClients(
 
     /** Production sync prefers Electrum and completes through Esplora if the Electrum pool is unavailable. */
     fun syncEngine(store: WalletSyncStore): SyncEngine {
+        if (electrumOnly) {
+            val electrum = pooledChain(ServerRole.ELECTRUM)
+            return SyncEngine(
+                store = store,
+                chainData = electrum,
+                historyEnricher = electrum,
+                singleAddressProvider = electrum,
+                singleAddressStateProvider = electrum,
+            )
+        }
         val esplora = pooledChain(ServerRole.ESPLORA)
         val singleAddressState = FallbackChainDataProvider(
             primary = pooledChain(ServerRole.ELECTRUM),

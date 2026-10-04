@@ -8,6 +8,22 @@ import fr.acinq.bitcoin.MnemonicCode
 import fr.acinq.bitcoin.Script
 import fr.acinq.bitcoin.io.ByteArrayOutput
 
+/** Development-only chain selection; all production APIs default to mainnet. */
+enum class BitcoinNetwork(
+    internal val genesisBlock: Block,
+    internal val supportedExtendedKeyVersions: Set<Int>,
+    val bech32Hrp: String,
+    val xpubPrefix: String,
+) {
+    MAINNET(Block.LivenetGenesisBlock, setOf(DeterministicWallet.xpub, DeterministicWallet.ypub, DeterministicWallet.zpub), "bc", "xpub"),
+    REGTEST(Block.RegtestGenesisBlock, setOf(DeterministicWallet.tpub, DeterministicWallet.upub, DeterministicWallet.vpub), "bcrt", "tpub"),
+    ;
+
+    companion object {
+        val production: BitcoinNetwork = MAINNET
+    }
+}
+
 /** Mainnet single-sig address types supported by Glance. */
 enum class ScriptType(
     internal val purpose: Long,
@@ -69,7 +85,7 @@ private const val BIP39_TWELVE_WORD_ENTROPY_BYTES = 16
  * [classifyUnifiedImport] and its discovery flow. Supported single-sig descriptors are always
  * unambiguous.
  */
-fun parseWatchedKey(input: String, scriptType: ScriptType? = null): WatchOnlyKey {
+fun parseWatchedKey(input: String, scriptType: ScriptType? = null, network: BitcoinNetwork = BitcoinNetwork.production): WatchOnlyKey {
     val normalizedInput = normalizeWatchedKeyInput(input)
     val descriptor = supportedDescriptorOrNull(normalizedInput)
     if (descriptor != null) {
@@ -77,12 +93,12 @@ fun parseWatchedKey(input: String, scriptType: ScriptType? = null): WatchOnlyKey
         require(scriptType == null || scriptType == descriptorType) {
             "Output descriptor conflicts with selected script type"
         }
-        return WatchOnlyKey.fromSerialized(serializedKey, descriptorType)
+        return WatchOnlyKey.fromSerialized(serializedKey, descriptorType, network)
     }
 
     require(!normalizedInput.contains('(')) { "Unsupported output descriptor" }
     requireNotNull(scriptType) { "A script type is required for a plain extended public key" }
-    return WatchOnlyKey.fromSerialized(normalizedInput, scriptType)
+    return WatchOnlyKey.fromSerialized(normalizedInput, scriptType, network)
 }
 
 /**
@@ -139,10 +155,10 @@ fun classifyUnifiedImport(input: String): UnifiedImport {
  * case-sensitive; parsing against the mainnet genesis block rejects test networks and bad
  * checksums.
  */
-fun parseSingleAddress(input: String): String {
+fun parseSingleAddress(input: String, network: BitcoinNetwork = BitcoinNetwork.production): String {
     val normalized = input.trim()
     require(normalized.isNotEmpty()) { "A Bitcoin address is required" }
-    Bitcoin.addressToPublicKeyScript(Block.LivenetGenesisBlock.hash, normalized)
+    Bitcoin.addressToPublicKeyScript(network.genesisBlock.hash, normalized)
         .fold(
             { throw IllegalArgumentException("Invalid mainnet Bitcoin address") },
             { Unit },
@@ -225,8 +241,8 @@ private val DESCRIPTOR_CHECKSUM_GENERATORS = longArrayOf(
 )
 
 /** Returns the Electrum scripthash for a supported mainnet address. */
-fun electrumScriptHash(address: String): String {
-    val script = Bitcoin.addressToPublicKeyScript(Block.LivenetGenesisBlock.hash, address)
+fun electrumScriptHash(address: String, network: BitcoinNetwork = BitcoinNetwork.production): String {
+    val script = Bitcoin.addressToPublicKeyScript(network.genesisBlock.hash, address)
         .fold(
             { throw IllegalArgumentException("Invalid mainnet address") },
             { it },
@@ -247,16 +263,16 @@ class WatchOnlyKey private constructor(
     private val extendedPublicKey: DeterministicWallet.ExtendedPublicKey,
     val scriptType: ScriptType,
 ) {
-    fun derive(chain: Int, index: Long): DerivedAddress {
+    fun derive(chain: Int, index: Long, network: BitcoinNetwork = BitcoinNetwork.production): DerivedAddress {
         require(chain == EXTERNAL_CHAIN || chain == INTERNAL_CHAIN) { "chain must be external (0) or internal (1)" }
         require(index in 0 until HARDENED_KEY_INDEX) { "watch-only derivation index must be non-hardened" }
 
         val child = extendedPublicKey.derivePublicKey(listOf(chain.toLong(), index)).publicKey
         val address = when (scriptType) {
-            ScriptType.LEGACY -> Bitcoin.computeBIP44Address(child, Block.LivenetGenesisBlock.hash)
-            ScriptType.SEGWIT_COMPAT -> Bitcoin.computeBIP49Address(child, Block.LivenetGenesisBlock.hash)
-            ScriptType.NATIVE_SEGWIT -> Bitcoin.computeBIP84Address(child, Block.LivenetGenesisBlock.hash)
-            ScriptType.TAPROOT -> Bitcoin.computeBIP86Address(child, Block.LivenetGenesisBlock.hash)
+            ScriptType.LEGACY -> Bitcoin.computeBIP44Address(child, network.genesisBlock.hash)
+            ScriptType.SEGWIT_COMPAT -> Bitcoin.computeBIP49Address(child, network.genesisBlock.hash)
+            ScriptType.NATIVE_SEGWIT -> Bitcoin.computeBIP84Address(child, network.genesisBlock.hash)
+            ScriptType.TAPROOT -> Bitcoin.computeBIP86Address(child, network.genesisBlock.hash)
         }
         return DerivedAddress(chain, index, address)
     }
@@ -266,22 +282,16 @@ class WatchOnlyKey private constructor(
         private const val INTERNAL_CHAIN = 1
         private const val HARDENED_KEY_INDEX = 0x80000000L
 
-        fun fromSerialized(serialized: String, scriptType: ScriptType): WatchOnlyKey {
+        fun fromSerialized(serialized: String, scriptType: ScriptType, network: BitcoinNetwork = BitcoinNetwork.production): WatchOnlyKey {
             val (version, key) = try {
                 DeterministicWallet.ExtendedPublicKey.decode(serialized)
             } catch (_: IllegalArgumentException) {
                 throw IllegalArgumentException("Invalid extended public key")
             }
-            require(version in supportedVersions) { "Only mainnet extended public keys are supported" }
+            require(version in network.supportedExtendedKeyVersions) { "Extended public key is not valid for the selected network" }
             require(isCompatible(version, scriptType)) { "Extended public key version does not match script type" }
             return WatchOnlyKey(key, scriptType)
         }
-
-        private val supportedVersions = setOf(
-            DeterministicWallet.xpub,
-            DeterministicWallet.ypub,
-            DeterministicWallet.zpub,
-        )
 
         private fun isCompatible(version: Int, scriptType: ScriptType): Boolean = when (version) {
             // Version bytes name an export convention, not a cryptographic restriction. Some
@@ -290,6 +300,9 @@ class WatchOnlyKey private constructor(
             DeterministicWallet.xpub -> true
             DeterministicWallet.ypub -> scriptType == ScriptType.SEGWIT_COMPAT
             DeterministicWallet.zpub -> scriptType == ScriptType.NATIVE_SEGWIT
+            DeterministicWallet.tpub -> true
+            DeterministicWallet.upub -> scriptType == ScriptType.SEGWIT_COMPAT
+            DeterministicWallet.vpub -> scriptType == ScriptType.NATIVE_SEGWIT
             else -> false
         }
     }

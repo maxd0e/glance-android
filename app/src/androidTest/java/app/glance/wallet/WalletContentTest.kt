@@ -161,6 +161,31 @@ class WalletContentTest {
     }
 
     @Test
+    fun addWatchTargetScreenKeepsAddActionReachableWhenExpertOptionsExpand() {
+        val database = Room.inMemoryDatabaseBuilder(context, GlanceDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        composeRule.setContent {
+            GlanceTheme {
+                AddWatchTargetScreen(
+                    database = database,
+                    discoverXpub = { error("Format discovery should not run") },
+                    torReady = true,
+                    onImported = {},
+                    onBack = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Expert options").performClick()
+        composeRule.onNodeWithTag("add_watch_target_form")
+            .performScrollToNode(hasTestTag("add_watch_target"))
+        composeRule.onNodeWithTag("add_watch_target").assertIsDisplayed().assertIsEnabled()
+
+        database.close()
+    }
+
+    @Test
     fun torBootstrapShowsTheTorConnectionStatusBelowTheLoadingBar() {
         composeRule.setContent { GlanceTheme { TorBootstrapScreen() } }
 

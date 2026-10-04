@@ -10,6 +10,12 @@ description: |
 
   This is a beta release. It never imports private keys or seed phrases, signs
   transactions, or broadcasts transactions. Network traffic uses Tor by default.
+images:
+  - ./docs/design/banner/1.png
+  - ./docs/design/banner/2.png
+  - ./docs/design/banner/3.png
+  - ./docs/design/banner/4.png
+  - ./docs/design/banner/5.png
 tags:
   - bitcoin
   - wallet

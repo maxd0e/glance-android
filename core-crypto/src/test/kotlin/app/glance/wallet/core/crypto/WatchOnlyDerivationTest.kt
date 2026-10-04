@@ -8,6 +8,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WatchOnlyDerivationTest {
+    @Test
+    fun `regtest network context is explicit while production defaults to mainnet`() {
+        assertEquals(BitcoinNetwork.MAINNET, BitcoinNetwork.production)
+        assertEquals("bcrt", BitcoinNetwork.REGTEST.bech32Hrp)
+        assertEquals("tpub", BitcoinNetwork.REGTEST.xpubPrefix)
+    }
+
 
     @Test
     fun `validates standard mainnet single addresses without treating testnet as mainnet`() {

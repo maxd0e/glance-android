@@ -28,4 +28,7 @@ google-services.json
 
 # Private planning and contributor material is maintained outside the public repository.
 /docs/
+!/docs/
+!/docs/phase-notes/
+!/docs/phase-notes/phase-10-hardening-qa-checklist.md
 /AGENTS.md

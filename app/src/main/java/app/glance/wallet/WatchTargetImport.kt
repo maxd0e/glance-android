@@ -24,6 +24,8 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -162,7 +164,12 @@ import kotlin.math.roundToInt
         }
     }
     Scaffold(containerColor = GlanceBackground, topBar = { BackBar("Add watch target", onBack) }) { padding -> Column(
-        Modifier.fillMaxSize().padding(padding).padding(horizontal = HomeScreenGutter),
+        Modifier.fillMaxSize()
+            .padding(padding)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = HomeScreenGutter)
+            .padding(bottom = 28.dp)
+            .testTag("add_watch_target_form"),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Spacer(Modifier.height(4.dp))
