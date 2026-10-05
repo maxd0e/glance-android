@@ -234,6 +234,39 @@ class WalletContentTest {
     }
 
     @Test
+    fun expandedDuressProfilePrecedesBackupSettings() {
+        val authentication = AuthenticationCoordinator(preferences, profiles)
+        composeRule.setContent {
+            GlanceTheme {
+                Phase7SettingsContent(
+                    settings = SecurityPreferences(),
+                    preferences = preferences,
+                    authentication = authentication,
+                    tor = TorController(context),
+                    backup = backup,
+                    biometricAvailable = false,
+                    onBack = {},
+                    onStealth = {},
+                    onSupport = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Duress PIN").performClick()
+        composeRule.onNodeWithTag("phase7_settings_scroll")
+            .performScrollToNode(hasTestTag("settings_group_duress_profile"))
+        composeRule.onNodeWithTag("phase7_settings_scroll")
+            .performScrollToNode(hasTestTag("settings_group_backup"))
+
+        val duressBounds = composeRule.onNodeWithTag("settings_group_duress_profile")
+            .fetchSemanticsNode().boundsInRoot
+        val backupBounds = composeRule.onNodeWithTag("settings_group_backup")
+            .fetchSemanticsNode().boundsInRoot
+
+        assertTrue(duressBounds.top < backupBounds.top)
+    }
+
+    @Test
     fun settingsNoLongerExposesTheGlobalUtxoViewChoice() {
         val authentication = AuthenticationCoordinator(preferences, profiles)
         composeRule.setContent {
@@ -254,7 +287,39 @@ class WalletContentTest {
 
         composeRule.onNodeWithText("UTXO view").assertDoesNotExist()
         composeRule.onNodeWithTag("setting_utxo_view").assertDoesNotExist()
-        composeRule.onNodeWithTag("backup_import").assertDoesNotExist()
+        composeRule.onNodeWithTag("phase7_settings_scroll")
+            .performScrollToNode(hasTestTag("settings_group_backup"))
+        composeRule.onNodeWithTag("backup_export").assertIsDisplayed()
+        composeRule.onNodeWithTag("backup_import").assertIsNotEnabled()
+    }
+
+    @Test
+    fun emptyWalletBackupCardStartsImportFromItsDisclosureRow() {
+        val authentication = AuthenticationCoordinator(preferences, profiles)
+        var importRequested = false
+        composeRule.setContent {
+            GlanceTheme {
+                Phase7SettingsContent(
+                    settings = SecurityPreferences(),
+                    preferences = preferences,
+                    authentication = authentication,
+                    tor = TorController(context),
+                    backup = backup,
+                    biometricAvailable = false,
+                    onImportBackup = { importRequested = true },
+                    canImportBackup = true,
+                    onBack = {},
+                    onStealth = {},
+                    onSupport = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("phase7_settings_scroll")
+            .performScrollToNode(hasTestTag("backup_import"))
+        composeRule.onNodeWithTag("backup_import").performClick()
+
+        assertTrue(importRequested)
     }
 
     @Test
@@ -281,12 +346,43 @@ class WalletContentTest {
         composeRule.onNodeWithTag("settings_group_app_behavior").assertIsDisplayed()
         composeRule.onNodeWithText("PIN code").assertDoesNotExist()
         composeRule.onNodeWithText("Street mode").assertDoesNotExist()
-        composeRule.onNodeWithText("Export backup").assertDoesNotExist()
         composeRule.onNodeWithText("Share error log").assertDoesNotExist()
         composeRule.onNodeWithText("Duress PIN").performClick()
         composeRule.onNodeWithTag("phase7_settings_scroll")
             .performScrollToNode(hasText("Set up duress profile"))
         composeRule.onNodeWithText("Set up duress profile").assertIsDisplayed()
+    }
+
+    @Test
+    fun backupExportUsesPasswordTerminology() {
+        val authentication = AuthenticationCoordinator(preferences, profiles)
+        composeRule.setContent {
+            GlanceTheme {
+                Phase7SettingsContent(
+                    settings = SecurityPreferences(),
+                    preferences = preferences,
+                    authentication = authentication,
+                    tor = TorController(context),
+                    backup = backup,
+                    biometricAvailable = false,
+                    onBack = {},
+                    onStealth = {},
+                    onSupport = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("phase7_settings_scroll")
+            .performScrollToNode(hasTestTag("backup_export"))
+        composeRule.onNodeWithTag("backup_export").performClick()
+
+        composeRule.onNodeWithText("Password").assertIsDisplayed()
+        composeRule.onNodeWithText("Confirm password").assertIsDisplayed()
+        composeRule.onNodeWithText("passphrase", substring = true, ignoreCase = true).assertDoesNotExist()
+        composeRule.onNodeWithTag("backup_passphrase_cancel").assertIsDisplayed()
+        composeRule.onNodeWithText("Password").performTextReplacement("short")
+        composeRule.onNodeWithText("Confirm password").performTextReplacement("short")
+        composeRule.onNodeWithTag("backup_passphrase_confirm").assertIsEnabled()
     }
 
     @Test

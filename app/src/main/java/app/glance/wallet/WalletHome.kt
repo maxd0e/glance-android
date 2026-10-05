@@ -15,6 +15,7 @@ import androidx.core.graphics.createBitmap
 import androidx.core.graphics.set
 import androidx.core.net.toUri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
@@ -378,6 +379,11 @@ internal fun HomeOnboarding(
             onClick = onImportWallet,
             enabled = canImportWallet,
             shape = GlancePillShape,
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = GlanceText,
+                disabledContentColor = GlanceMuted.copy(alpha = 0.38f),
+            ),
+            border = BorderStroke(1.dp, if (canImportWallet) GlanceMuted else GlanceMuted.copy(alpha = 0.38f)),
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("import_wallet"),
         ) { Text(content.restoreActionLabel) }
         importUnavailableMessage?.let { message ->

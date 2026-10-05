@@ -2,6 +2,25 @@
 
 All notable changes to Glance are documented in this file.
 
+## [1.0.0] - 2026-10-05
+
+### Added
+
+- Completed the watch-only wallet experience: BIP44/49/84/86, supported descriptors,
+  fixed mainnet addresses, transactions, UTXOs, receive, charts, and encrypted backup/import.
+- Added bundled-Tor routing, encrypted local storage, PIN/biometric access, isolated duress
+  wallet support, street mode, and the functional calculator launcher disguise.
+
+### Security
+
+- Completed the first-release hardening work for encrypted storage, routing-policy revocation,
+  hostile network input bounds, directory trust, backups, and release provenance.
+
+### Notes
+
+- Glance is watch-only: it never imports private keys or seed phrases, signs transactions, or
+  broadcasts transactions. Verify wallet data independently before acting on it.
+
 ## [0.1.0-beta.13] - 2026-09-30
 
 ### Improved

@@ -314,16 +314,25 @@ internal fun SettingsDisclosureRow(
     modifier: Modifier = Modifier,
     value: String? = null,
     warning: Boolean = false,
+    enabled: Boolean = true,
     icon: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) = Row(
-    modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onClick).padding(horizontal = 12.dp),
+    modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 12.dp),
     verticalAlignment = Alignment.CenterVertically,
 ) {
     icon?.let { it(); Spacer(Modifier.width(8.dp)) }
-    Text(label, Modifier.weight(1f), color = if (warning) GlanceWarning else GlanceText, style = MaterialTheme.typography.bodyMedium)
+    Text(label, Modifier.weight(1f), color = when {
+        !enabled -> GlanceMuted.copy(alpha = 0.38f)
+        warning -> GlanceWarning
+        else -> GlanceText
+    }, style = MaterialTheme.typography.bodyMedium)
     value?.let { Text(it, color = GlanceMuted, style = MaterialTheme.typography.bodySmall) }
-    Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = if (warning) GlanceWarning else GlanceMuted, modifier = Modifier.padding(start = 4.dp))
+    Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = when {
+        !enabled -> GlanceMuted.copy(alpha = 0.38f)
+        warning -> GlanceWarning
+        else -> GlanceMuted
+    }, modifier = Modifier.padding(start = 4.dp))
 }
 
 @Composable

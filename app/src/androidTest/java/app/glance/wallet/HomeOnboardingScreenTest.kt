@@ -35,7 +35,7 @@ class HomeOnboardingScreenTest {
         composeRule.onNodeWithContentDescription("Glance logo").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Tor routing").assertIsDisplayed()
         composeRule.onNodeWithText("+  Add your first key").performClick()
-        composeRule.onNodeWithText("Import wallet").performClick()
+        composeRule.onNodeWithText("Import backup").performClick()
 
         assertTrue(addRequested)
         assertTrue(restoreRequested)
@@ -49,12 +49,12 @@ class HomeOnboardingScreenTest {
                     onAdd = {},
                     onImportWallet = {},
                     canImportWallet = false,
-                    importUnavailableMessage = "Import wallet requires an empty local wallet.",
+                    importUnavailableMessage = "Import backup requires an empty local wallet.",
                 )
             }
         }
 
-        composeRule.onNodeWithText("Import wallet").assertIsNotEnabled()
-        composeRule.onNodeWithText("Import wallet requires an empty local wallet.").assertIsDisplayed()
+        composeRule.onNodeWithText("Import backup").assertIsNotEnabled()
+        composeRule.onNodeWithText("Import backup requires an empty local wallet.").assertIsDisplayed()
     }
 }

@@ -201,21 +201,35 @@ internal fun SettingsScreen(
     tor: TorController,
     backup: BackupRepository,
     onEncryptedBackupReady: (ByteArray, Int) -> Unit,
+    onBackupImported: suspend (BackupSettings) -> Unit,
+    pendingBackupImport: PendingBackupImportState,
+    onRequestBackupImport: () -> Unit,
+    onClearPendingBackupImport: () -> Unit,
     onBack: () -> Unit,
     onStealth: () -> Unit,
     onSupport: () -> Unit,
-) = Phase7SettingsContent(
-    settings = settings,
-    preferences = preferences,
-    authentication = authentication,
-    tor = tor,
-    backup = backup,
-    onEncryptedBackupReady = onEncryptedBackupReady,
-    biometricAvailable = BiometricUnlocker(BiometricManager.from(LocalContext.current)).isAvailable(),
-    onBack = onBack,
-    onStealth = onStealth,
-    onSupport = onSupport,
-)
+) = BackupImportWalletAction(
+    repository = backup,
+    onImported = onBackupImported,
+    pendingImport = pendingBackupImport,
+    onRequestBackupImport = onRequestBackupImport,
+    onClearPendingImport = onClearPendingBackupImport,
+) { onImport, canImport, _ ->
+    Phase7SettingsContent(
+        settings = settings,
+        preferences = preferences,
+        authentication = authentication,
+        tor = tor,
+        backup = backup,
+        onEncryptedBackupReady = onEncryptedBackupReady,
+        onImportBackup = onImport,
+        canImportBackup = canImport,
+        biometricAvailable = BiometricUnlocker(BiometricManager.from(LocalContext.current)).isAvailable(),
+        onBack = onBack,
+        onStealth = onStealth,
+        onSupport = onSupport,
+    )
+}
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -227,6 +241,8 @@ internal fun Phase7SettingsContent(
     backup: BackupRepository,
     biometricAvailable: Boolean,
     onEncryptedBackupReady: (ByteArray, Int) -> Unit = { bytes, _ -> bytes.fill(0) },
+    onImportBackup: () -> Unit = {},
+    canImportBackup: Boolean = false,
     onBack: () -> Unit,
     onStealth: () -> Unit,
     onSupport: () -> Unit,
@@ -280,7 +296,6 @@ internal fun Phase7SettingsContent(
                 SettingsDisclosureRow("Duress PIN", value = if (settings.credentials?.duressPinVerifier == null) "Not set" else "Configured") { duressExpanded = !duressExpanded }
                 if (duressExpanded) SettingsDivider()
             } }
-            item { BackupSettingsActions(backup, onEncryptedBackupReady) }
             if (duressExpanded) {
                 item {
                     SettingsGroup("Duress profile", "settings_group_duress_profile") {
@@ -298,6 +313,7 @@ internal fun Phase7SettingsContent(
                     }
                 }
             }
+            item { BackupSettingsActions(backup, onEncryptedBackupReady, onImportBackup, canImportBackup) }
             item { SettingsGroup("Support", "settings_group_support") { SettingsDisclosureRow("Support Glance", icon = { Icon(Icons.Filled.Favorite, contentDescription = null, tint = GlanceMandarin, modifier = Modifier.size(14.dp)) }, onClick = onSupport) } }
             item { SettingsGroup("About", "settings_group_about") { SettingsValueRow("Version", BuildConfig.VERSION_NAME) } }
             item { SettingsGroup("Troubleshooting", "settings_group_troubleshooting") { SettingsDisclosureRow("Erase all data", value = null, warning = true) { eraseConfirmation = true } } }

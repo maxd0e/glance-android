@@ -5,8 +5,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -26,12 +28,25 @@ import kotlinx.coroutines.withContext
 
 internal fun requiresDirectConnectionRestoreWarning(snapshot: BackupSnapshot): Boolean = !snapshot.settings.torEnabled
 
-@Composable internal fun BackupSettingsActions(repository: BackupRepository, onEncryptedBackupReady: (ByteArray, Int) -> Unit) {
+@Composable
+internal fun BackupSettingsActions(
+    repository: BackupRepository,
+    onEncryptedBackupReady: (ByteArray, Int) -> Unit,
+    onImportBackup: () -> Unit,
+    canImportBackup: Boolean,
+) {
     val scope = rememberCoroutineScope()
     var exportPassphrase by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     SettingsGroup("Backup", "settings_group_backup") {
-        SettingsDisclosureRow("Export encrypted backup", modifier = Modifier.testTag("backup_export")) { exportPassphrase = "" }
+        SettingsDisclosureRow("Export backup", modifier = Modifier.testTag("backup_export")) { exportPassphrase = "" }
+        SettingsDivider()
+        SettingsDisclosureRow(
+            "Import backup",
+            modifier = Modifier.testTag("backup_import"),
+            enabled = canImportBackup,
+            onClick = onImportBackup,
+        )
     }
     exportPassphrase?.let { value -> PassphraseDialog("Export backup", value, confirmation = true, onDismiss = { exportPassphrase = null }) { passphrase ->
         exportPassphrase = null
@@ -84,7 +99,7 @@ internal fun BackupImportWalletAction(
     trigger(
         { if (canRestore == true) onRequestBackupImport() },
         canRestore == true,
-        if (canRestore == false) "Import wallet requires an empty local wallet." else null,
+        if (canRestore == false) "Import backup requires an empty local wallet." else null,
     )
     importBytes?.let { bytes -> PassphraseDialog("Import backup", importPassphrase.orEmpty(), onDismiss = { importBytes = null; importPassphrase = null; onClearPendingImport() }) { passphrase ->
         scope.launch {
@@ -106,12 +121,28 @@ internal fun BackupImportWalletAction(
 @Composable private fun PassphraseDialog(title: String, initial: String, confirmation: Boolean = false, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
     var passphrase by remember { mutableStateOf(initial) }; var confirm by remember { mutableStateOf("") }
     val passwordKeyboard = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Password)
-    val valid = if (confirmation) passphrase.length >= MIN_BACKUP_PASSPHRASE_LENGTH && passphrase == confirm else passphrase.isNotEmpty()
+    val valid = if (confirmation) passphrase.isNotEmpty() && passphrase == confirm else passphrase.isNotEmpty()
     AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = { Column {
-        Text(if (confirmation) "Use at least $MIN_BACKUP_PASSPHRASE_LENGTH characters. This passphrase cannot be recovered." else "Enter the backup passphrase.")
-        OutlinedTextField(passphrase, { passphrase = it }, label = { Text("Passphrase") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = passwordKeyboard, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-        if (confirmation) OutlinedTextField(confirm, { confirm = it }, label = { Text("Confirm passphrase") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = passwordKeyboard, modifier = Modifier.fillMaxWidth())
-    } }, dismissButton = { Button(onClick = onDismiss) { Text("Cancel") } }, confirmButton = { Button(enabled = valid, onClick = { onConfirm(passphrase) }) { Text(if (confirmation) "Export" else "Continue") } })
+        Text(if (confirmation) "Choose a backup password. This password cannot be recovered." else "Enter the backup password.")
+        OutlinedTextField(passphrase, { passphrase = it }, label = { Text("Password") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = passwordKeyboard, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+        if (confirmation) OutlinedTextField(confirm, { confirm = it }, label = { Text("Confirm password") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = passwordKeyboard, modifier = Modifier.fillMaxWidth())
+    } }, dismissButton = {
+        TextButton(
+            onClick = onDismiss,
+            colors = ButtonDefaults.textButtonColors(contentColor = GlanceText),
+            modifier = Modifier.testTag("backup_passphrase_cancel"),
+        ) { Text("Cancel") }
+    }, confirmButton = {
+        Button(
+            enabled = valid,
+            onClick = { onConfirm(passphrase) },
+            colors = ButtonDefaults.buttonColors(
+                containerColor = GlanceMandarin,
+                contentColor = GlanceBackground,
+                disabledContainerColor = GlanceMuted.copy(alpha = 0.38f),
+                disabledContentColor = GlanceBackground.copy(alpha = 0.38f),
+            ),
+            modifier = Modifier.testTag("backup_passphrase_confirm"),
+        ) { Text(if (confirmation) "Export" else "Continue") }
+    })
 }
-
-private const val MIN_BACKUP_PASSPHRASE_LENGTH = 12

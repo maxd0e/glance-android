@@ -8,7 +8,7 @@ description: |
   Glance is a watch-only Android Bitcoin wallet for single-signature HD wallets.
   It supports BIP44, BIP49, BIP84, BIP86, descriptors, and fixed mainnet addresses.
 
-  This is a beta release. It never imports private keys or seed phrases, signs
+  It never imports private keys or seed phrases, signs
   transactions, or broadcasts transactions. Network traffic uses Tor by default.
 images:
   - ./docs/design/banner/1.png
